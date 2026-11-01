@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-gbfs}
+      POSTGRES_USER: ${POSTGRES_USER:-gbfs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build: db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &pg
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-gbfs}
+      PGUSER: ${POSTGRES_USER:-gbfs}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+
+  ingest:
+    build: services/ingest
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *pg
+    restart: unless-stopped
+
+volumes:
+  pgdata:

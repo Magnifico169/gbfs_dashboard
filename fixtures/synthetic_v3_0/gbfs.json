@@ -1,0 +1,25 @@
+{
+ "last_updated": "2026-11-01T21:44:00+00:00",
+ "ttl": 30,
+ "version": "3.0",
+ "data": {
+  "feeds": [
+   {
+    "name": "system_information",
+    "url": "https://example.org/gbfs/3.0/system_information.json"
+   },
+   {
+    "name": "station_information",
+    "url": "https://example.org/gbfs/3.0/station_information.json"
+   },
+   {
+    "name": "station_status",
+    "url": "https://example.org/gbfs/3.0/station_status.json"
+   },
+   {
+    "name": "vehicle_types",
+    "url": "https://example.org/gbfs/3.0/vehicle_types.json"
+   }
+  ]
+ }
+}

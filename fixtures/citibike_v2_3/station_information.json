@@ -1,0 +1,107 @@
+{
+ "data": {
+  "stations": [
+   {
+    "station_id": "66dc292c-0aca-11e7-82f6-3863bb44ef7c",
+    "name": "Broadway & W 41 St",
+    "short_name": "6560.01",
+    "lon": -73.98658032,
+    "lat": 40.75513557,
+    "region_id": "71",
+    "capacity": 55,
+    "rental_uris": {
+     "android": "https://bkn.lft.to/lastmile_qr_scan",
+     "ios": "https://bkn.lft.to/lastmile_qr_scan"
+    },
+    "is_charging": false
+   },
+   {
+    "station_id": "3f05490b-a3d8-4d15-bd25-0212555b5dff",
+    "name": "Fort Hamilton Pkwy & E 5 St",
+    "short_name": "3240.15",
+    "lon": -73.97673,
+    "lat": 40.649037,
+    "region_id": "71",
+    "capacity": 0,
+    "rental_uris": {
+     "android": "https://bkn.lft.to/lastmile_qr_scan",
+     "ios": "https://bkn.lft.to/lastmile_qr_scan"
+    },
+    "is_charging": false
+   },
+   {
+    "station_id": "754ac5df-f2b5-4636-8c58-ed84ea262bde",
+    "name": "Bailey Ave & Sedgwick Ave",
+    "short_name": "8643.01",
+    "lon": -73.90857,
+    "lat": 40.86571,
+    "region_id": "71",
+    "capacity": 20,
+    "rental_uris": {
+     "android": "https://bkn.lft.to/lastmile_qr_scan",
+     "ios": "https://bkn.lft.to/lastmile_qr_scan"
+    },
+    "is_charging": false
+   },
+   {
+    "station_id": "2206772051528680770",
+    "name": "62 Dr & 110 St",
+    "short_name": "5936.06",
+    "lon": -73.84904,
+    "lat": 40.73632,
+    "region_id": "71",
+    "capacity": 14,
+    "rental_uris": {
+     "android": "https://bkn.lft.to/lastmile_qr_scan",
+     "ios": "https://bkn.lft.to/lastmile_qr_scan"
+    },
+    "is_charging": false
+   },
+   {
+    "station_id": "9635affa-8b18-42d5-84c4-7f67ad5ef9d0",
+    "name": "Alexander Ave & E 134 St",
+    "short_name": "7712.04",
+    "lon": -73.927107,
+    "lat": 40.807466,
+    "region_id": "71",
+    "capacity": 19,
+    "rental_uris": {
+     "android": "https://bkn.lft.to/lastmile_qr_scan",
+     "ios": "https://bkn.lft.to/lastmile_qr_scan"
+    },
+    "is_charging": false
+   },
+   {
+    "station_id": "2252359470927034588",
+    "name": "Bedford Ave & Lenox Rd",
+    "short_name": "3439.04",
+    "lon": -73.956269,
+    "lat": 40.653891,
+    "region_id": "71",
+    "capacity": 20,
+    "rental_uris": {
+     "android": "https://bkn.lft.to/lastmile_qr_scan",
+     "ios": "https://bkn.lft.to/lastmile_qr_scan"
+    },
+    "is_charging": false
+   },
+   {
+    "station_id": "ef6216aa-d3c8-46bb-8c6b-b62f8ba51b16",
+    "name": "Van Sinderen Ave & Truxton St",
+    "short_name": "4161.01",
+    "lon": -73.90369,
+    "lat": 40.6786,
+    "region_id": "71",
+    "capacity": 23,
+    "rental_uris": {
+     "android": "https://bkn.lft.to/lastmile_qr_scan",
+     "ios": "https://bkn.lft.to/lastmile_qr_scan"
+    },
+    "is_charging": false
+   }
+  ]
+ },
+ "last_updated": 1793569469,
+ "ttl": 60,
+ "version": "2.3"
+}
