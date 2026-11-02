@@ -1,0 +1,68 @@
+x-app: &app
+  build:
+    context: .
+    dockerfile: services/api/Dockerfile
+  image: gbfs-app:dev
+
+x-pg: &pg
+  PGHOST: postgres
+  PGPORT: "5432"
+  PGDATABASE: ${POSTGRES_DB:-gbfs}
+  PGUSER: ${POSTGRES_USER:-gbfs}
+  PGPASSWORD: ${POSTGRES_PASSWORD}
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-gbfs}
+      POSTGRES_USER: ${POSTGRES_USER:-gbfs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *pg
+
+  ingest:
+    <<: *app
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *pg
+      DB_ROLE: app_ingest
+    restart: unless-stopped
+
+  api:
+    <<: *app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *pg
+      DB_ROLE: app_api
+    ports:
+      - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/livez')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:

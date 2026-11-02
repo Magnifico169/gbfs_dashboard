@@ -1,0 +1,26 @@
+{
+ "last_updated": "2026-11-01T21:44:00+00:00",
+ "ttl": 30,
+ "version": "3.0",
+ "data": {
+  "system_id": "synthetic_v3",
+  "languages": [
+   "en",
+   "fr"
+  ],
+  "name": [
+   {
+    "text": "Synthetic Bikes",
+    "language": "en"
+   },
+   {
+    "text": "Synthetic Bikes (fr)",
+    "language": "fr"
+   }
+  ],
+  "opening_hours": "Mo-Su 00:00-24:00",
+  "timezone": "Europe/Paris",
+  "feed_contact_email": "ops@example.org",
+  "manifest_url": "https://example.org/manifest.json"
+ }
+}

@@ -3,6 +3,7 @@ status: accepted
 date: 2026-11-02
 decision-makers: Павел
 iteration: M0 — концепт
+note: пп. 1, 3, 5 и 11 частично изменены ADR-0003 (приём данных на Python)
 ---
 
 # 0002. Архитектура, роли и pipeline данных (итерация M0)
