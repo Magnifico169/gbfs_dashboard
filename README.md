@@ -13,7 +13,10 @@
 * валидация снимков, невалидные строки уходят в `core.station_quarantine`;
 * в `core.station_status` пишутся только изменившиеся станции, `core.station_current` хранит последнее состояние;
 * справочники станций ведутся как SCD2;
-* схема БД и миграции (Alembic).
+* схема БД описана моделями SQLAlchemy, миграции — Alembic; весь код приёма работает через ORM;
+* FastAPI-приложение с пробами `/livez` и `/readyz` (бизнес-эндпоинты — с M2/M3).
+
+Приём написан на Python (см. [ADR-0003](docs/adr/0003-priyom-dannyh-na-python.md)) и живёт в одном приложении с API; R остаётся для ролл-апов, профилей загрузки и прогноза.
 
 Пока не реализовано (M2): события из дельт (`core.station_event` создана, но пуста), `NOTIFY`, ролл-апы, API.
 
@@ -29,10 +32,21 @@
 
 ```
 docs/adr/            архитектурные решения (ADR)
-db/                  миграции PostgreSQL (Alembic, SQL в db/migrations/versions)
-services/ingest/     R: приём фидов GBFS, нормализация, валидация, тесты (testthat)
+services/api/        Python: FastAPI-приложение, воркер приёма, миграции Alembic
+  app/core/          настройки (config/settings.py), подключение к БД (singleton)
+  app/models/        ORM-модели — единственный источник схемы
+  app/schemas/       pydantic-схемы: данные GBFS, ответы API
+  app/repositories/  доступ к данным через ORM
+  app/services/      нормализация, валидация, приём
+  app/clients/       клиент фидов GBFS
+  app/api/           роутеры и зависимости FastAPI
+  app/worker.py      воркер приёма
+  migrations/        ревизии Alembic
+  tests/             pytest
+pyproject.toml       uv-воркспейс и настройки ruff
+uv.lock              зафиксированные версии зависимостей
 fixtures/            сохранённые фиды GBFS для тестов (Citi Bike v2.3, синтетический v3.0)
-docker-compose.yml   окружение: PostgreSQL 18, миграции, приём
+docker-compose.yml   окружение: PostgreSQL 18, миграции, приём, API
 .env.example         шаблон переменных окружения
 pyproject.toml       настройки ruff (Python)
 .lintr               настройки lintr (R)
@@ -43,7 +57,7 @@ CHANGELOG.md         журнал изменений
 Планируемые каталоги (появятся вместе с кодом):
 
 ```
-services/api/        Python (FastAPI): HTTP API, роли, задачи, SSE
+services/analytics/  R: ролл-апы, профили загрузки, прогноз
 web/                 фронтенд
 deploy/              конфигурация развёртывания (позже — Helm)
 ```
@@ -62,7 +76,7 @@ cp .env.example .env
 docker compose up -d --wait
 ```
 
-Команда поднимает PostgreSQL, применяет миграции (сервис `migrate`) и запускает приём (`ingest`). Статус приёма:
+Команда поднимает PostgreSQL, применяет миграции (`migrate`), запускает приём (`ingest`) и API (`api`, порт 8000; проверка: `curl localhost:8000/readyz`). Статус приёма:
 
 ```bash
 docker compose exec postgres psql -U gbfs -d gbfs -c "select feed, status, rows_in, rows_written, rows_quarantined from app.ingest_run order by run_id desc limit 10"
@@ -71,7 +85,7 @@ docker compose exec postgres psql -U gbfs -d gbfs -c "select feed, status, rows_
 Один проход приёма без цикла:
 
 ```bash
-docker compose run --rm ingest Rscript run.R --once
+docker compose run --rm ingest python -m app.worker --once
 ```
 
 PostgreSQL будет доступен на `localhost:5433` (порт меняется через `POSTGRES_PORT`; 5433 выбран, чтобы не конфликтовать с локальным PostgreSQL на 5432).
@@ -94,14 +108,46 @@ docker compose down
 docker compose down -v
 ```
 
-## Тесты
+## Разработка
 
-Тесты приёма (testthat) запускаются в контейнере; интеграционные используют PostgreSQL из compose и создают на время прогона отдельную базу:
+Зависимости ведёт [uv](https://docs.astral.sh/uv/) (Python 3.12, версии зафиксированы в `uv.lock`):
 
 ```bash
-set -a; . ./.env; set +a
-docker compose build ingest
-docker run --rm --network host -e PGHOST=localhost -e PGPORT=$POSTGRES_PORT -e PGUSER=$POSTGRES_USER -e PGPASSWORD=$POSTGRES_PASSWORD -e PGDATABASE=$POSTGRES_DB -e FIXTURES_DIR=/fixtures -e MIGRATIONS_DIR=/migrations -v $PWD/fixtures:/fixtures:ro -v $PWD/db/migrations/versions:/migrations:ro -v $PWD/services/ingest:/app -w /app/tests/testthat gbfs_dashboard-ingest Rscript -e 'testthat::test_dir(".")'
+uv sync
+```
+
+Все параметры сервиса — в [settings.py](services/api/app/core/config/settings.py); читаются из переменных окружения и `.env` (имена `PG*` и `POSTGRES_*` равноправны), поэтому локально отдельная настройка не нужна.
+
+Тесты. Интеграционные используют PostgreSQL из compose: на каждый тест создаётся отдельная база, схема накатывается настоящим Alembic.
+
+```bash
+cd services/api && uv run pytest
+```
+
+Приложение локально:
+
+```bash
+cd services/api && uv run uvicorn app.main:app --reload
+```
+
+```bash
+cd services/api && uv run python -m app.worker --once
+```
+
+Миграции. После изменения моделей в `app/models/` ревизия генерируется на пустой базе и правится вручную (схемы, роли, гранты):
+
+```bash
+cd services/api && uv run alembic revision --autogenerate -m "описание"
+```
+
+```bash
+cd services/api && uv run alembic upgrade head
+```
+
+Расхождение моделей и БД:
+
+```bash
+cd services/api && uv run alembic check
 ```
 
 ## Статический анализ
