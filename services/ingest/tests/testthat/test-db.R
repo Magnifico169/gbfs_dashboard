@@ -1,31 +1,34 @@
 # Интеграционные тесты: нужна доступная PostgreSQL (переменные PG*), на каждый прогон
 # создаётся и удаляется отдельная база.
 
-admin <- NULL
 test_db <- paste0("gbfs_test_", Sys.getpid())
 
 migrations_dir <- function() {
-  Sys.getenv("MIGRATIONS_DIR", normalizePath("../../../../db/migrations/versions"))
+  default <- normalizePath("../../../../db/migrations/versions", mustWork = FALSE)
+  Sys.getenv("MIGRATIONS_DIR", default)
 }
 
 setup_db <- function() {
   skip_if(Sys.getenv("PGHOST") == "", "PostgreSQL не настроена (PGHOST)")
-  admin <<- db_connect()
+  admin <- db_connect()
+  DBI::dbExecute(admin, paste0("drop database if exists ", test_db, " with (force)"))
   DBI::dbExecute(admin, paste0("create database ", test_db))
   env <- as.list(Sys.getenv())
   env[["PGDATABASE"]] <- test_db
   con <- db_connect(env)
   # В тестах схема накатывается напрямую из SQL ревизий Alembic (R-образ без Python).
   for (path in sort(list.files(migrations_dir(), pattern = "\\.sql$", full.names = TRUE))) {
-    DBI::dbExecute(con, paste(readLines(path, encoding = "UTF-8"), collapse = "\n"))
+    sql <- paste(readLines(path, encoding = "UTF-8"), collapse = "\n")
+    DBI::dbExecute(con, sql, immediate = TRUE)
   }
   db_set_ingest_role(con)
   db_ensure_partitions(con)
-  con
+  list(con = con, admin = admin)
 }
 
-teardown_db <- function(con) {
-  DBI::dbDisconnect(con)
+teardown_db <- function(db) {
+  DBI::dbDisconnect(db$con)
+  admin <- db$admin
   DBI::dbExecute(admin, paste0("drop database if exists ", test_db, " with (force)"))
   DBI::dbDisconnect(admin)
 }
@@ -35,8 +38,9 @@ count_rows <- function(con, table) {
 }
 
 test_that("приём v2.3: справочники, факты, неизменные станции не пишутся повторно", {
-  con <- setup_db()
-  withr::defer(teardown_db(con))
+  db <- setup_db()
+  con <- db$con
+  withr::defer(teardown_db(db))
 
   set <- "citibike_v2_3"
   feeds <- list(
@@ -67,8 +71,9 @@ test_that("приём v2.3: справочники, факты, неизменн
 })
 
 test_that("приём v3.0 и карантин невалидных строк", {
-  con <- setup_db()
-  withr::defer(teardown_db(con))
+  db <- setup_db()
+  con <- db$con
+  withr::defer(teardown_db(db))
 
   set <- "synthetic_v3_0"
   feeds <- list(
@@ -93,8 +98,9 @@ test_that("приём v3.0 и карантин невалидных строк",
 })
 
 test_that("SCD2: изменение атрибутов станции открывает новую версию", {
-  con <- setup_db()
-  withr::defer(teardown_db(con))
+  db <- setup_db()
+  con <- db$con
+  withr::defer(teardown_db(db))
 
   info <- read_fixture("synthetic_v3_0", "station_information")
   stations <- normalize_station_information(info, "synthetic_v3")
@@ -113,11 +119,14 @@ test_that("SCD2: изменение атрибутов станции откры
 })
 
 test_that("роль app_ingest не может менять настройки систем (их пишет админка)", {
-  con <- setup_db()
-  withr::defer(teardown_db(con))
+  db <- setup_db()
+  con <- db$con
+  withr::defer(teardown_db(db))
 
   expect_error(
-    DBI::dbExecute(con, "insert into app.system_setting (system_id, discovery_url) values ('a', 'b')"),
+    DBI::dbExecute(
+      con, "insert into app.system_setting (system_id, discovery_url) values ('a', 'b')"
+    ),
     "permission denied"
   )
 })

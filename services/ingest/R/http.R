@@ -1,17 +1,17 @@
 # HTTP-слой: таймаут, повторы с экспоненциальным backoff, условные запросы по ETag.
 
-USER_AGENT <- "gbfs-dashboard-ingest/0.1"
-TRANSIENT_STATUSES <- c(429L, 500L, 502L, 503L, 504L)
+user_agent <- "gbfs-dashboard-ingest/0.1"
+transient_statuses <- c(429L, 500L, 502L, 503L, 504L)
 
 # Возвращает list(status, body, etag, error). status — HTTP-код (NA при сетевой ошибке),
 # body — разобранный JSON (NULL для 304 и ошибок).
 fetch_json <- function(url, etag = NULL, timeout_s = 15, max_tries = 3L) {
   request <- httr2::request(url) |>
-    httr2::req_user_agent(USER_AGENT) |>
+    httr2::req_user_agent(user_agent) |>
     httr2::req_timeout(timeout_s) |>
     httr2::req_retry(
       max_tries = max_tries,
-      is_transient = function(resp) httr2::resp_status(resp) %in% TRANSIENT_STATUSES,
+      is_transient = function(resp) httr2::resp_status(resp) %in% transient_statuses,
       backoff = function(attempt) 2^attempt + stats::runif(1L)
     ) |>
     httr2::req_error(is_error = function(resp) FALSE)

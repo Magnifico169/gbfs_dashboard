@@ -19,7 +19,8 @@ test_that("корректная строка проходит", {
 })
 
 test_that("отрицательный счётчик отбраковывается", {
-  expect_equal(validate_station_status(make_status(docks_available = -1L), NULL, now), "negative_counter")
+  status <- make_status(docks_available = -1L)
+  expect_equal(validate_station_status(status, NULL, now), "negative_counter")
 })
 
 test_that("превышение вместимости отбраковывается", {

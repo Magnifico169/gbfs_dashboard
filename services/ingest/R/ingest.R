@@ -1,11 +1,11 @@
 # Оркестрация приёма: опрос фидов, нормализация, валидация, запись. Функции apply_* принимают
 # уже разобранный JSON и не ходят в сеть, поэтому проверяются на сохранённых фикстурах.
 
-REFERENCE_FEEDS <- c("system_information", "station_information", "vehicle_types", "system_regions")
-REFERENCE_REFRESH_S <- 3600
-MIN_POLL_S <- 10
-MAX_POLL_S <- 300
-MAX_BACKOFF_S <- 300
+reference_feeds <- c("system_information", "station_information", "vehicle_types", "system_regions")
+reference_refresh_s <- 3600
+min_poll_s <- 10
+max_poll_s <- 300
+max_backoff_s <- 300
 
 log_msg <- function(...) {
   message(format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"), " ", paste0(...))
@@ -85,7 +85,7 @@ refresh_reference <- function(con, state, now) {
   state$feed_urls <- parsed$feeds
 
   feeds <- list()
-  for (feed in intersect(REFERENCE_FEEDS, names(parsed$feeds))) {
+  for (feed in intersect(reference_feeds, names(parsed$feeds))) {
     response <- poll_feed(con, state, feed, parsed$feeds[[feed]])
     if (!is.null(response$body)) {
       feeds[[feed]] <- response$body
@@ -102,7 +102,7 @@ refresh_reference <- function(con, state, now) {
 
 # Один цикл по системе: при необходимости обновляет справочники, затем снимок состояния.
 ingest_system <- function(con, state, now = Sys.time()) {
-  if (difftime(now, state$reference_at, units = "secs") > REFERENCE_REFRESH_S ||
+  if (difftime(now, state$reference_at, units = "secs") > reference_refresh_s ||
         is.null(state$feed_urls)) {
     refresh_reference(con, state, now)
   }
@@ -130,7 +130,7 @@ ingest_system <- function(con, state, now = Sys.time()) {
     counts$rows_in, counts$rows_written, counts$rows_quarantined
   )
   ttl <- to_int(response$body$ttl)
-  state$ttl <- if (is.na(ttl)) MIN_POLL_S else ttl
+  state$ttl <- if (is.na(ttl)) min_poll_s else ttl
   log_msg(
     state$system_id, ": принято ", counts$rows_in, ", записано ", counts$rows_written,
     ", в карантине ", counts$rows_quarantined
@@ -142,11 +142,11 @@ schedule_next <- function(state, now, ok) {
     state$failures <- 0L
     interval <- state$poll_interval_s
     if (is.null(interval) || is.na(interval)) {
-      interval <- min(max(state$ttl %||% MIN_POLL_S, MIN_POLL_S), MAX_POLL_S)
+      interval <- min(max(state$ttl %||% min_poll_s, min_poll_s), max_poll_s)
     }
   } else {
     state$failures <- state$failures + 1L
-    interval <- min(MIN_POLL_S * 2^state$failures, MAX_BACKOFF_S)
+    interval <- min(min_poll_s * 2^state$failures, max_backoff_s)
   }
   state$next_due <- now + interval
 }

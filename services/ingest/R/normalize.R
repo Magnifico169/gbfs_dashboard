@@ -5,7 +5,7 @@
 # в station_status переименованы в num_vehicles_available/num_vehicles_disabled. Типы значений
 # разбираются по факту, имена полей — по списку синонимов.
 
-EPOCH_SENTINEL <- as.POSIXct("2000-01-01", tz = "UTC")
+epoch_sentinel <- as.POSIXct("2000-01-01", tz = "UTC")
 
 field <- function(x, name, default = NA) {
   value <- x[[name]]
@@ -69,7 +69,7 @@ to_utc <- function(x) {
     text <- sub("([+-][0-9]{2}):([0-9]{2})$", "\\1\\2", text)
     as.POSIXct(strptime(text, "%Y-%m-%dT%H:%M:%S%z", tz = "UTC"))
   }
-  if (is.na(parsed) || parsed < EPOCH_SENTINEL) as.POSIXct(NA_real_, tz = "UTC") else parsed
+  if (is.na(parsed) || parsed < epoch_sentinel) as.POSIXct(NA_real_, tz = "UTC") else parsed
 }
 
 # Первое присутствующее из полей-синонимов (v2-имя, затем v3-имя).

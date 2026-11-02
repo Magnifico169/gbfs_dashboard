@@ -4,12 +4,18 @@
 
 Принятые архитектурные решения и их обоснование — в [docs/adr/](docs/adr/). История изменений — в [CHANGELOG.md](CHANGELOG.md).
 
-## Текущая итерация: M0 — концепт
+## Текущая итерация: M1 — приём данных
 
-Прикладного кода пока нет. В репозитории есть:
+Работает приём живого фида Citi Bike в PostgreSQL 18:
 
-* архитектурные решения (ADR);
-* `docker-compose.yml` с PostgreSQL 18 — база, на которой строится всё остальное.
+* опрос фидов GBFS (ETag, таймаут, повторы с backoff), журнал запусков в `app.ingest_run`;
+* нормализация GBFS v1.1 / v2.x / v3.0 в единую модель;
+* валидация снимков, невалидные строки уходят в `core.station_quarantine`;
+* в `core.station_status` пишутся только изменившиеся станции, `core.station_current` хранит последнее состояние;
+* справочники станций ведутся как SCD2;
+* схема БД и миграции (Alembic).
+
+Пока не реализовано (M2): события из дельт (`core.station_event` создана, но пуста), `NOTIFY`, ролл-апы, API.
 
 ## Возможности
 
@@ -23,7 +29,10 @@
 
 ```
 docs/adr/            архитектурные решения (ADR)
-docker-compose.yml   окружение разработки (пока только PostgreSQL 18)
+db/                  миграции PostgreSQL (Alembic, SQL в db/migrations/versions)
+services/ingest/     R: приём фидов GBFS, нормализация, валидация, тесты (testthat)
+fixtures/            сохранённые фиды GBFS для тестов (Citi Bike v2.3, синтетический v3.0)
+docker-compose.yml   окружение: PostgreSQL 18, миграции, приём
 .env.example         шаблон переменных окружения
 pyproject.toml       настройки ruff (Python)
 .lintr               настройки lintr (R)
@@ -34,11 +43,8 @@ CHANGELOG.md         журнал изменений
 Планируемые каталоги (появятся вместе с кодом):
 
 ```
-services/ingest/     R: приём фидов GBFS, нормализация, валидация, ролл-апы
 services/api/        Python (FastAPI): HTTP API, роли, задачи, SSE
 web/                 фронтенд
-db/migrations/       миграции PostgreSQL
-fixtures/            сохранённые фиды GBFS для тестов
 deploy/              конфигурация развёртывания (позже — Helm)
 ```
 
@@ -54,6 +60,18 @@ cp .env.example .env
 
 ```bash
 docker compose up -d --wait
+```
+
+Команда поднимает PostgreSQL, применяет миграции (сервис `migrate`) и запускает приём (`ingest`). Статус приёма:
+
+```bash
+docker compose exec postgres psql -U gbfs -d gbfs -c "select feed, status, rows_in, rows_written, rows_quarantined from app.ingest_run order by run_id desc limit 10"
+```
+
+Один проход приёма без цикла:
+
+```bash
+docker compose run --rm ingest Rscript run.R --once
 ```
 
 PostgreSQL будет доступен на `localhost:5433` (порт меняется через `POSTGRES_PORT`; 5433 выбран, чтобы не конфликтовать с локальным PostgreSQL на 5432).
@@ -74,6 +92,16 @@ docker compose down
 
 ```bash
 docker compose down -v
+```
+
+## Тесты
+
+Тесты приёма (testthat) запускаются в контейнере; интеграционные используют PostgreSQL из compose и создают на время прогона отдельную базу:
+
+```bash
+set -a; . ./.env; set +a
+docker compose build ingest
+docker run --rm --network host -e PGHOST=localhost -e PGPORT=$POSTGRES_PORT -e PGUSER=$POSTGRES_USER -e PGPASSWORD=$POSTGRES_PASSWORD -e PGDATABASE=$POSTGRES_DB -e FIXTURES_DIR=/fixtures -e MIGRATIONS_DIR=/migrations -v $PWD/fixtures:/fixtures:ro -v $PWD/db/migrations/versions:/migrations:ro -v $PWD/services/ingest:/app -w /app/tests/testthat gbfs_dashboard-ingest Rscript -e 'testthat::test_dir(".")'
 ```
 
 ## Статический анализ
@@ -101,8 +129,8 @@ Rscript -e 'lintr::lint_dir(".")'
 
 | Веха | Результат |
 |---|---|
-| M0 | Концепт и ADR *(текущая)* |
-| M1 | Приём данных на R: Citi Bike, нормализация v2/v3, валидация; схема PostgreSQL |
+| M0 | Концепт и ADR |
+| M1 | Приём данных на R: Citi Bike, нормализация v2/v3, валидация; схема PostgreSQL *(текущая)* |
 | M2 | `station_current`, ролл-апы, API чтения, SSE; нагрузочный замер |
 | M3 | Python API: аутентификация, роли, зоны |
 | M4 | Экран оператора с обработкой ошибок |
