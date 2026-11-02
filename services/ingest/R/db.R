@@ -2,7 +2,7 @@
 # после подключения соединение переключается на роль app_ingest, чтобы это обеспечивала БД.
 # Схему создаёт Alembic (db/), приём её не мигрирует.
 
-INGEST_ROLE <- "app_ingest"
+ingest_role <- "app_ingest"
 
 db_connect <- function(env = Sys.getenv()) {
   DBI::dbConnect(
@@ -16,7 +16,7 @@ db_connect <- function(env = Sys.getenv()) {
 }
 
 db_set_ingest_role <- function(con) {
-  DBI::dbExecute(con, paste0("set role ", INGEST_ROLE))
+  DBI::dbExecute(con, paste0("set role ", ingest_role))
   invisible(con)
 }
 
@@ -152,7 +152,7 @@ db_quarantine <- function(con, status, reason, fetched_at) {
   DBI::dbAppendTable(con, DBI::Id(schema = "core", table = "station_quarantine"), rows)
 }
 
-STATE_COLUMNS <- c(
+state_columns <- c(
   "bikes_available", "ebikes_available", "bikes_disabled", "docks_available", "docks_disabled",
   "is_installed", "is_renting", "is_returning"
 )
@@ -164,7 +164,7 @@ db_write_status <- function(con, status, fetched_at) {
     return(0L)
   }
   state_values <- function(alias) {
-    paste0(alias, ".", STATE_COLUMNS, collapse = ", ")
+    paste0(alias, ".", state_columns, collapse = ", ")
   }
   DBI::dbWithTransaction(con, {
     db_stage(con, "tmp_status", status)
@@ -176,25 +176,30 @@ db_write_status <- function(con, status, fetched_at) {
       where c.station_id is null
         or (", state_values("t"), ") is distinct from (", state_values("c"), ")"))
     all_columns <- paste(
-      c("system_id", "station_id", "reported_at", STATE_COLUMNS),
+      c("system_id", "station_id", "reported_at", state_columns),
       collapse = ", "
     )
-    written <- DBI::dbExecute(con, paste0("
-      insert into core.station_status (", all_columns, ", fetched_at)
-      select ", all_columns, ", $1 from tmp_changed"), list(fetched_at))
-    DBI::dbExecute(con, paste0("
-      insert into core.station_current (", all_columns, ", fetched_at, checked_at)
-      select ", all_columns, ", $1, $1 from tmp_changed
-      on conflict (system_id, station_id) do update set
-        reported_at = excluded.reported_at, fetched_at = excluded.fetched_at,
-        checked_at = excluded.checked_at, ",
-      paste0(STATE_COLUMNS, " = excluded.", STATE_COLUMNS, collapse = ", ")), list(fetched_at))
-    DBI::dbExecute(con, "
-      update core.station_current c
-      set checked_at = $1, reported_at = t.reported_at
-      from tmp_status t
-      where c.system_id = t.system_id and c.station_id = t.station_id and c.checked_at < $1",
-      list(fetched_at))
+    insert_status <- paste0(
+      "insert into core.station_status (", all_columns, ", fetched_at) ",
+      "select ", all_columns, ", $1 from tmp_changed"
+    )
+    written <- DBI::dbExecute(con, insert_status, list(fetched_at))
+    upsert_current <- paste0(
+      "insert into core.station_current (", all_columns, ", fetched_at, checked_at) ",
+      "select ", all_columns, ", $1, $1 from tmp_changed ",
+      "on conflict (system_id, station_id) do update set ",
+      "reported_at = excluded.reported_at, fetched_at = excluded.fetched_at, ",
+      "checked_at = excluded.checked_at, ",
+      paste0(state_columns, " = excluded.", state_columns, collapse = ", ")
+    )
+    DBI::dbExecute(con, upsert_current, list(fetched_at))
+    touch_current <- paste(
+      "update core.station_current c",
+      "set checked_at = $1, reported_at = t.reported_at",
+      "from tmp_status t",
+      "where c.system_id = t.system_id and c.station_id = t.station_id and c.checked_at < $1"
+    )
+    DBI::dbExecute(con, touch_current, list(fetched_at))
     written
   })
 }
