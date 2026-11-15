@@ -58,10 +58,11 @@ class StationStatus(StationStateMixin, Base):
     system_id: Mapped[str] = mapped_column(Text, primary_key=True)
     station_id: Mapped[str] = mapped_column(Text, primary_key=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    observed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class StationEvent(Entity):
-    """Создаётся в M1, наполняется с M2 (вывод событий из дельт)."""
+    """События из дельт счётчиков, нижняя оценка перемещений транспорта."""
 
     __tablename__ = "station_event"
     __table_args__ = (
@@ -80,6 +81,9 @@ class StationQuarantine(Entity):
     __tablename__ = "station_quarantine"
     __table_args__ = (
         Index("ix_station_quarantine_system_time", "system_id", text("fetched_at desc")),
+        Index(
+            "ix_station_quarantine_station_time", "system_id", "station_id", text("fetched_at desc")
+        ),
         {"schema": "core"},
     )
 
