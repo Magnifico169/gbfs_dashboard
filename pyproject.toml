@@ -16,5 +16,13 @@ select = [
     "RUF",     # ruff-specific
 ]
 
+ignore = [
+    "RUF001", "RUF002", "RUF003",  # кириллица в строках, докстрингах и комментариях
+]
+
 [tool.ruff.lint.per-file-ignores]
+"services/api/app/models/*.py" = ["RUF012"]  # __table_args__ — штатная идиома SQLAlchemy
 "**/tests/**" = ["S101"]  # assert в тестах допустим
+
+[tool.uv.workspace]
+members = ["services/api"]

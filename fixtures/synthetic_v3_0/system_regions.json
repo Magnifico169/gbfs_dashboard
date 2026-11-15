@@ -1,0 +1,22 @@
+{
+ "last_updated": "2026-11-01T21:44:00+00:00",
+ "ttl": 30,
+ "version": "3.0",
+ "data": {
+  "regions": [
+   {
+    "region_id": "r1",
+    "name": [
+     {
+      "text": "Centre",
+      "language": "en"
+     },
+     {
+      "text": "Centre (fr)",
+      "language": "fr"
+     }
+    ]
+   }
+  ]
+ }
+}
