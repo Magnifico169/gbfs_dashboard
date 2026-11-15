@@ -61,14 +61,22 @@ process_chunk <- function(connection, system_id, zone, until, stale_after_s) {
     ), params = list(system_id, start, end))
     station_ids <- union(as.character(facts$station_id), as.character(events$station_id))
     chunks <- split(station_ids, ceiling(seq_along(station_ids) / 100))
+    # COPY не поддерживается для таблиц с RLS: staging получает схему из модели БД.
+    DBI::dbExecute(connection, paste(
+      "create temporary table rollup_batch",
+      "(like mart.station_rollup including defaults) on commit drop"
+    ))
     for (ids in chunks) {
       values <- calculate_rollups(facts[facts$station_id %in% ids, , drop = FALSE],
                                   events[events$station_id %in% ids, , drop = FALSE],
                                   start, end, zone, stale_after_s)
       if (nrow(values) == 0L) next
       values$system_id <- system_id
-      # RPostgres использует COPY; defaults created_at/updated_at остаются на стороне БД.
-      DBI::dbAppendTable(connection, DBI::Id(schema = "mart", table = "station_rollup"), values)
+      DBI::dbAppendTable(connection, DBI::Id(schema = "pg_temp", table = "rollup_batch"), values)
+      DBI::dbExecute(connection, paste(
+        "insert into mart.station_rollup select * from pg_temp.rollup_batch"
+      ))
+      DBI::dbExecute(connection, "truncate pg_temp.rollup_batch")
     }
     DBI::dbExecute(connection, paste(
       "insert into mart.rollup_cursor (system_id, processed_until) values ($1, $2)",

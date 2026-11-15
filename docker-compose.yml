@@ -72,6 +72,7 @@ services:
     environment:
       <<: *pg
       DB_ROLE: app_api
+      AUTH_SECRET: ${AUTH_SECRET:?задайте AUTH_SECRET в .env (не меньше 32 байт)}
       STALE_AFTER_S: ${STALE_AFTER_S:-300}
     ports:
       - "${API_PORT:-8000}:8000"

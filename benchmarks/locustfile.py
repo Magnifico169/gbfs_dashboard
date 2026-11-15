@@ -14,14 +14,25 @@ class DashboardUser(FastHttpUser):
     connection_timeout = 5
     network_timeout = 10
 
+    def on_start(self):
+        self.auth_headers = {"Authorization": f"Bearer {os.environ['BENCH_TOKEN']}"}
+
     @task(8)
     def stations(self):
-        self.client.get(f"/api/v1/systems/{SYSTEM}/stations?limit=100", name="stations")
+        self.client.get(
+            f"/api/v1/systems/{SYSTEM}/stations?limit=100",
+            name="stations",
+            headers=self.auth_headers,
+        )
 
     @task(2)
     def station(self):
         station_id = f"s{random.randrange(2500):05}"  # noqa: S311
-        self.client.get(f"/api/v1/systems/{SYSTEM}/stations/{station_id}", name="station")
+        self.client.get(
+            f"/api/v1/systems/{SYSTEM}/stations/{station_id}",
+            name="station",
+            headers=self.auth_headers,
+        )
 
     @task(1)
     def annual_rollup(self):
@@ -34,4 +45,5 @@ class DashboardUser(FastHttpUser):
                 "resolution": "day",
             },
             name="annual_rollup",
+            headers=self.auth_headers,
         )

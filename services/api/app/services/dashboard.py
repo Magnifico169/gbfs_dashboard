@@ -8,6 +8,7 @@ from collections.abc import Callable
 from app.core.config.settings import Settings
 from app.core.database import Database
 from app.repositories.dashboard import DashboardRepository
+from app.services.access import Access
 
 
 class ReadCapacityError(Exception):
@@ -59,15 +60,16 @@ class ReadService:
         finally:
             self.pending.pop(key, None)
 
-    def query(self, method: str, *args, report=False):
+    def query(self, method: str, *args, access: Access, report=False):
         database = self.reports if report else self.database
         with database.session() as session:
+            access.apply(session)
             return getattr(DashboardRepository(session), method)(*args)
 
-    async def snapshot(self, system_id: str):
+    async def snapshot(self, system_id: str, access: Access):
         return await self.read(
-            (system_id, "snapshot"),
-            lambda: self.query("snapshot", system_id, self.settings.stale_after_s),
+            (system_id, "snapshot", access),
+            lambda: self.query("snapshot", system_id, self.settings.stale_after_s, access=access),
         )
 
     async def close(self):

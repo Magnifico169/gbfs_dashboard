@@ -10,6 +10,20 @@ class AdmissionMiddleware:
         self.active = 0
 
     async def __call__(self, scope, receive, send):
+        original_send = send
+        if scope["type"] == "http" and scope["path"].startswith("/api/"):
+
+            async def private_send(message):
+                if message["type"] == "http.response.start":
+                    headers = [
+                        (k, v)
+                        for k, v in message.get("headers", [])
+                        if k.lower() != b"cache-control"
+                    ]
+                    message = {**message, "headers": [*headers, (b"cache-control", b"no-store")]}
+                await original_send(message)
+
+            send = private_send
         if scope["type"] != "http" or scope["path"].endswith("/stream"):
             return await self.app(scope, receive, send)
         if self.active >= self.limit:

@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.exc import ProgrammingError
 
+from app.api.auth import current_user
 from app.core.config.settings import Settings, get_settings
 from app.core.database import Database
 from app.main import create_app
@@ -16,9 +17,13 @@ from app.models import StationCurrent, StationEvent, StationRollup, StationStatu
 from app.repositories.notifications import snapshot_ready
 from app.repositories.station_state import StationStateRepository
 from app.schemas.gbfs import StationStatusRow
+from app.services.access import Access
+from app.services.auth import Principal
 from app.services.dashboard import ReadCapacityError, ReadService
 from app.services.ingestion import IngestService
 from app.services.stream import StreamService
+
+ADMIN_ACCESS = Access("admin", None, None)
 
 
 def row(now, bikes=5, **kwargs):
@@ -99,7 +104,18 @@ def test_api_reads_quality_pagination_and_history(ingest_db, monkeypatch):
     monkeypatch.setenv("DB_ROLE", "app_api")
     get_settings.cache_clear()
     Database.reset_instance()
-    with TestClient(create_app()) as client:
+    app = create_app()
+    app.dependency_overrides[current_user] = lambda: Principal(
+        sub="1",
+        role="admin",
+        system_id=None,
+        regions=None,
+        iat=0,
+        exp=9999999999,
+        iss="gbfs-api",
+        aud="gbfs-dashboard",
+    )
+    with TestClient(app) as client:
         systems = client.get("/api/v1/systems")
         assert systems.status_code == 200 and systems.json()[0]["id"] == "synthetic_v3"
         prefix = "/api/v1/systems/synthetic_v3"
@@ -152,13 +168,13 @@ def test_read_cache_coalesces_and_invalidation_drops_inflight_result():
 def test_sse_queue_limit_and_client_cleanup():
     settings = Settings(_env_file=None, sse_max_clients=1, sse_queue_size=1)
     hub = StreamService(Mock(), settings)
-    queue = hub.subscribe("x")
+    queue = hub.subscribe("x", ADMIN_ACCESS)
     with pytest.raises(ReadCapacityError):
-        hub.subscribe("x")
-    hub.broadcast("x", "delta", {"a": 1})
-    hub.broadcast("x", "delta", {"a": 2})
+        hub.subscribe("x", ADMIN_ACCESS)
+    hub.broadcast(("x", ADMIN_ACCESS), "delta", {"a": 1})
+    hub.broadcast(("x", ADMIN_ACCESS), "delta", {"a": 2})
     assert "event: reset" in queue.get_nowait()
-    hub.unsubscribe("x", queue)
+    hub.unsubscribe("x", queue, ADMIN_ACCESS)
     assert hub.count == 0 and not hub.clients
 
 
@@ -186,20 +202,20 @@ def test_listen_delivers_committed_delta(ingest_db):
     async def run():
         reads = ReadService(ingest_db, get_settings())
         hub = StreamService(reads, get_settings())
-        queue = hub.subscribe("synthetic_v3")
+        queue = hub.subscribe("synthetic_v3", ADMIN_ACCESS)
         hub.start()
         try:
             async with asyncio.timeout(5):
                 while not hub.connected:
                     await asyncio.sleep(0.01)
-            await hub.publish("synthetic_v3")
+            await hub.publish(("synthetic_v3", ADMIN_ACCESS))
             await queue.get()
             later = now + timedelta(seconds=1)
             await asyncio.to_thread(write, ingest_db, [row(later, 0)], later)
             message = await asyncio.wait_for(queue.get(), 5)
             assert '"bikes_available":0' in message and "event: delta" in message
         finally:
-            hub.unsubscribe("synthetic_v3", queue)
+            hub.unsubscribe("synthetic_v3", queue, ADMIN_ACCESS)
             await hub.close()
             await reads.close()
 

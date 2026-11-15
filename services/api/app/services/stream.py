@@ -9,6 +9,7 @@ from contextlib import suppress
 import psycopg
 
 from app.core.config.settings import Settings
+from app.services.access import Access
 from app.services.dashboard import ReadCapacityError, ReadService
 
 log = logging.getLogger(__name__)
@@ -23,46 +24,48 @@ def encode_event(event: str, data: dict) -> str:
 class StreamService:
     def __init__(self, reads: ReadService, settings: Settings):
         self.reads, self.settings = reads, settings
-        self.clients: dict[str, set[asyncio.Queue]] = defaultdict(set)
-        self.snapshots: dict[str, dict] = {}
-        self.initial_messages: dict[str, tuple[str, bytes]] = {}
+        self.clients: dict[tuple[str, Access], set[asyncio.Queue]] = defaultdict(set)
+        self.snapshots: dict[tuple[str, Access], dict] = {}
+        self.initial_messages: dict[tuple[str, Access], tuple[str, bytes]] = {}
         self.count = 0
         self.connected = False
         self.tasks = []
-        self._publishing: set[str] = set()
+        self._publishing: set[tuple[str, Access]] = set()
 
-    def subscribe(self, system_id: str) -> asyncio.Queue:
+    def subscribe(self, system_id: str, access: Access) -> asyncio.Queue:
+        group = (system_id, access)
         if self.count >= self.settings.sse_max_clients:
             raise ReadCapacityError
         queue = asyncio.Queue(maxsize=self.settings.sse_queue_size)
-        self.clients[system_id].add(queue)
+        self.clients[group].add(queue)
         self.count += 1
         return queue
 
-    def unsubscribe(self, system_id: str, queue: asyncio.Queue):
-        clients = self.clients.get(system_id)
+    def unsubscribe(self, system_id: str, queue: asyncio.Queue, access: Access):
+        group = (system_id, access)
+        clients = self.clients.get(group)
         if clients is not None and queue in clients:
             clients.remove(queue)
             self.count -= 1
             if not clients:
-                self.clients.pop(system_id)
-                self.snapshots.pop(system_id, None)
-                self.initial_messages.pop(system_id, None)
+                self.clients.pop(group)
+                self.snapshots.pop(group, None)
+                self.initial_messages.pop(group, None)
 
-    def initial_message(self, snapshot: dict) -> bytes:
-        system_id = snapshot["system_id"]
-        cached = self.initial_messages.get(system_id)
+    def initial_message(self, snapshot: dict, access: Access) -> bytes:
+        group = (snapshot["system_id"], access)
+        cached = self.initial_messages.get(group)
         if cached and cached[0] == snapshot["as_of"]:
             return cached[1]
-        if system_id not in self.snapshots:
-            self.snapshots[system_id] = {row["station_id"]: row for row in snapshot["stations"]}
+        if group not in self.snapshots:
+            self.snapshots[group] = {row["station_id"]: row for row in snapshot["stations"]}
         message = ("retry: 3000\n\n" + encode_event("snapshot", snapshot)).encode()
-        self.initial_messages[system_id] = (snapshot["as_of"], message)
+        self.initial_messages[group] = (snapshot["as_of"], message)
         return message
 
-    def broadcast(self, system_id: str, event: str, data: dict):
+    def broadcast(self, group: tuple[str, Access], event: str, data: dict):
         message = encode_event(event, data)
-        for queue in tuple(self.clients.get(system_id, ())):
+        for queue in tuple(self.clients.get(group, ())):
             if queue.full():
                 while not queue.empty():
                     queue.get_nowait()
@@ -70,14 +73,17 @@ class StreamService:
             else:
                 queue.put_nowait(message)
 
-    async def publish(self, system_id: str):
-        if system_id in self._publishing or system_id not in self.clients:
+    async def publish(self, group: tuple[str, Access]):
+        system_id, access = group
+        if group in self._publishing or group not in self.clients:
             return
-        self._publishing.add(system_id)
+        self._publishing.add(group)
         try:
-            snapshot = await self.reads.snapshot(system_id)
+            snapshot = await self.reads.snapshot(system_id, access)
+            if group not in self.clients:
+                return
             current = {row["station_id"]: row for row in snapshot["stations"]}
-            previous = self.snapshots.get(system_id, {})
+            previous = self.snapshots.get(group, {})
 
             # Возраст тикает у каждого клиента; изменение чисел/качества шлём один раз на систему.
             def comparable(row):
@@ -91,7 +97,7 @@ class StreamService:
             removed = sorted(previous.keys() - current.keys())
             if changed or removed:
                 self.broadcast(
-                    system_id,
+                    group,
                     "delta",
                     {
                         "system_id": system_id,
@@ -100,12 +106,12 @@ class StreamService:
                         "removed": removed,
                     },
                 )
-            self.snapshots[system_id] = current
+            self.snapshots[group] = current
         except Exception:
             log.exception("SSE refresh failed for %s", system_id)
-            self.broadcast(system_id, "unavailable", {"reason": "database_unavailable"})
+            self.broadcast(group, "unavailable", {"reason": "database_unavailable"})
         finally:
-            self._publishing.discard(system_id)
+            self._publishing.discard(group)
 
     async def listen(self):
         cfg = self.settings
@@ -132,7 +138,9 @@ class StreamService:
                         except (ValueError, KeyError, TypeError):
                             continue
                         self.reads.invalidate(system_id)
-                        await self.publish(system_id)
+                        for group in tuple(self.clients):
+                            if group[0] == system_id:
+                                await self.publish(group)
             except psycopg.Error:
                 log.warning("LISTEN disconnected; retrying", exc_info=True)
             finally:
@@ -142,8 +150,8 @@ class StreamService:
     async def refresh(self):
         while True:
             await asyncio.sleep(self.settings.sse_heartbeat_s)
-            for system_id in tuple(self.clients):
-                await self.publish(system_id)
+            for group in tuple(self.clients):
+                await self.publish(group)
 
     def start(self):
         self.tasks = [asyncio.create_task(self.listen()), asyncio.create_task(self.refresh())]
