@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     db_connect_timeout_s: int = Field(3, ge=1)
     db_statement_timeout_ms: int = Field(5000, ge=1)
 
+    # Аутентификация: общий секрет всех реплик API, без встроенного значения.
+    auth_secret: SecretStr = SecretStr("")
+    auth_access_ttl_s: int = Field(300, ge=30, le=900)
+    auth_refresh_ttl_s: int = Field(604800, ge=300, le=2592000)
+
     # Приложение
     log_level: str = "INFO"
     app_title: str = "GBFS Dashboard"

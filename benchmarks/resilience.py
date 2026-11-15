@@ -1,6 +1,7 @@
 """Отключение TCP-доступа только к временному контейнеру gbfs-m2-test-pg."""
 
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -31,9 +32,12 @@ def sql(query):
 
 config = json.loads(docker("inspect", CONTAINER))[0]
 require(config["HostConfig"]["PortBindings"]["5432/tcp"][0]["HostPort"] == "55439")
-with httpx.Client(base_url=BASE_URL, timeout=10) as client:
+with httpx.Client(
+    base_url=BASE_URL, timeout=10, headers={"Authorization": f"Bearer {os.environ['BENCH_TOKEN']}"}
+) as client:
     path = "/api/v1/systems/m2_benchmark/stations?limit=1"
     baseline = client.get(path).status_code
+    require(baseline == 200)
     try:
         docker(
             "exec",

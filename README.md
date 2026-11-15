@@ -4,7 +4,7 @@
 
 Принятые архитектурные решения и их обоснование — в [docs/adr/](docs/adr/). История изменений — в [CHANGELOG.md](CHANGELOG.md).
 
-## Текущая итерация: M2 — чтение, ролл-апы и SSE
+## Текущая итерация: M3 — аутентификация, роли и зоны
 
 Работает приём живого фида Citi Bike в PostgreSQL 18:
 
@@ -18,11 +18,14 @@
 * события из дельт счётчиков, транзакционный `NOTIFY`, SSE-снимок и последующие дельты;
 * R-сервис `analytics`: идемпотентные ролл-апы 10 минут / час / местные сутки;
 * TTL-кэш, объединение одинаковых запросов, отдельный пул отчётов и ограниченные очереди;
+* собственные логины, Argon2id, короткие JWT и ротация refresh-сеансов;
+* роли оператора, менеджера и администратора, зоны по регионам, PostgreSQL RLS;
+* административный API пользователей и зон, журнал действий, изоляция кэша и SSE;
 * пробы `/livez` и `/readyz`, проверки деградации и нагрузочные сценарии.
 
 Приём написан на Python (см. [ADR-0003](docs/adr/0003-priyom-dannyh-na-python.md)) и живёт в одном приложении с API; R остаётся для ролл-апов, профилей загрузки и прогноза.
 
-M2 реализован; контракт API, семантика агрегатов и SSE — в [docs/m2.md](docs/m2.md). Нагрузочный сценарий и результаты — в [benchmarks/README.md](benchmarks/README.md). Аутентификация, роли пользователей и зоны относятся к M3.
+M2 реализован; контракт API, семантика агрегатов и SSE — в [docs/m2.md](docs/m2.md). Нагрузочный сценарий и результаты — в [benchmarks/README.md](benchmarks/README.md). M3 реализован; права, настройка пользователей и зон, срок отзыва токенов — в [docs/m3.md](docs/m3.md).
 
 ## Возможности
 
@@ -74,13 +77,19 @@ deploy/              конфигурация развёртывания (поз
 cp .env.example .env
 ```
 
-В `.env` замените `POSTGRES_PASSWORD` на свой пароль.
+В `.env` задайте `POSTGRES_PASSWORD` и `AUTH_SECRET` — общий секрет подписи JWT (не меньше 32 байт). Секрет можно сгенерировать командой `python3 -c 'import secrets; print(secrets.token_urlsafe(48))'`.
 
 ```bash
 docker compose up -d --wait
 ```
 
-Команда поднимает PostgreSQL, применяет миграции (`migrate`), запускает приём (`ingest`), расчёт ролл-апов (`analytics`) и API (`api`, порт 8000; проверка: `curl localhost:8000/readyz`). Healthcheck API использует `/readyz`: контейнер готов, когда отвечает база. Статус приёма:
+Команда поднимает PostgreSQL, применяет миграции (`migrate`), запускает приём (`ingest`), расчёт ролл-апов (`analytics`) и API (`api`, порт 8000; проверка: `curl localhost:8000/readyz`). Healthcheck API использует `/readyz`: контейнер готов, когда отвечает база. Создайте первого администратора (пароль запрашивается скрыто):
+
+```bash
+docker compose exec api python -m app.bootstrap admin
+```
+
+Вход — `POST /api/v1/auth/login`; данные требуют заголовок `Authorization: Bearer <access_token>`. Пользователи и зоны настраиваются через `/api/v1/admin`; порядок действий описан в [M3](docs/m3.md). Пробы остаются публичными. Статус приёма:
 
 ```bash
 docker compose exec postgres psql -U gbfs -d gbfs -c "select feed, status, rows_in, rows_written, rows_quarantined from app.ingest_run order by id desc limit 10"
@@ -125,7 +134,7 @@ cd services/api && uv run pytest
 Приложение локально:
 
 ```bash
-cd services/api && uv run uvicorn app.main:app --reload
+cd services/api && DB_ROLE=app_api uv run uvicorn app.main:app --reload
 ```
 
 ```bash
@@ -176,7 +185,7 @@ Rscript -e 'lintr::lint_dir(".")'
 | M0 | Концепт и ADR |
 | M1 | Приём данных на Python: Citi Bike, нормализация v2/v3, валидация; схема PostgreSQL — выполнено |
 | M2 | `station_current`, ролл-апы, API чтения, SSE; нагрузочный замер — выполнено |
-| M3 | Python API: аутентификация, роли, зоны |
+| M3 | Python API: аутентификация, роли, зоны — выполнено |
 | M4 | Экран оператора с обработкой ошибок |
 | M5 | Экран менеджера: отчёты по интервалам, графики на клиенте |
 | M6 | Экран администратора |

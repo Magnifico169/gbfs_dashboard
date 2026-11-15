@@ -32,6 +32,26 @@ class DashboardRepository:
     def systems(self) -> list[dict]:
         return [serialize(row) for row in self.session.scalars(select(System).order_by(System.id))]
 
+    def catalog(self, system_id: str, limit: int, after: str) -> dict:
+        if self.session.get(System, system_id) is None:
+            raise LookupError("system_not_found")
+        rows = list(
+            self.session.scalars(
+                select(Station)
+                .where(
+                    Station.system_id == system_id,
+                    Station.valid_to.is_(None),
+                    Station.station_id > after,
+                )
+                .order_by(Station.station_id)
+                .limit(limit + 1)
+            )
+        )
+        return {
+            "items": [serialize(row) for row in rows[:limit]],
+            "next_after": rows[limit - 1].station_id if len(rows) > limit else None,
+        }
+
     def snapshot(self, system_id: str, stale_after_s: int) -> dict:
         system = self.session.get(System, system_id)
         if system is None:

@@ -3,10 +3,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.api.admission import AdmissionMiddleware
-from app.api.routes import dashboard, health
+from app.api.auth_limits import AuthLimitsMiddleware
+from app.api.routes import accounts, auth, dashboard, health
 from app.core.config.settings import get_settings
 from app.core.database import get_database
 from app.services.dashboard import ReadCapacityError, ReadService
@@ -29,12 +30,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     app = FastAPI(title=get_settings().app_title, lifespan=lifespan)
     app.add_middleware(AdmissionMiddleware)
+    app.add_middleware(AuthLimitsMiddleware)
+    app.include_router(auth.router)
+    app.include_router(accounts.router)
     app.include_router(health.router)
     app.include_router(dashboard.router)
 
     @app.exception_handler(ReadCapacityError)
     async def capacity_error(request: Request, exc: ReadCapacityError):
         return JSONResponse({"detail": "overloaded"}, status_code=503, headers={"Retry-After": "3"})
+
+    @app.exception_handler(IntegrityError)
+    async def conflict(request: Request, exc: IntegrityError):
+        return JSONResponse({"detail": "conflict"}, status_code=409)
 
     @app.exception_handler(SQLAlchemyError)
     async def database_error(request: Request, exc: SQLAlchemyError):

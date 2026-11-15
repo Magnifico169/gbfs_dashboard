@@ -1,11 +1,19 @@
-"""API M2: чтение и SSE. Роли и зоны добавляются в M3."""
+"""Чтение и SSE с обязательным контекстом роли и зоны."""
 
 import asyncio
+import time
 from datetime import datetime, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+
+from app.api.auth import CurrentUser, data_access, live_access
+from app.services.access import Access
+from app.services.stream import encode_event
+
+DataAccess = Annotated[Access, Depends(data_access)]
+LiveAccess = Annotated[Access, Depends(live_access)]
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 Limit = Annotated[int, Query(ge=1, le=500)]
@@ -19,20 +27,34 @@ def interval(start: datetime, end: datetime, days: int):
 
 
 @router.get("/systems")
-async def systems(request: Request):
+async def systems(request: Request, access: DataAccess):
     reads = request.app.state.reads
-    return await reads.read(("*", "systems"), lambda: JSONResponse(reads.query("systems")))
+    return await reads.read(
+        ("*", "systems", access), lambda: JSONResponse(reads.query("systems", access=access))
+    )
+
+
+@router.get("/systems/{system_id}/catalog")
+async def catalog(
+    request: Request, system_id: str, access: DataAccess, limit: Limit = 100, after: str = ""
+):
+    reads = request.app.state.reads
+    return await reads.read(
+        (system_id, "catalog", limit, after, access),
+        lambda: JSONResponse(reads.query("catalog", system_id, limit, after, access=access)),
+    )
 
 
 @router.get("/systems/{system_id}/stations")
 async def stations(
     request: Request,
     system_id: str,
+    access: LiveAccess,
     limit: Limit = 100,
     after: str = "",
     region_id: str | None = None,
 ):
-    snapshot = await request.app.state.reads.snapshot(system_id)
+    snapshot = await request.app.state.reads.snapshot(system_id, access)
     rows = [
         row
         for row in snapshot["stations"]
@@ -48,8 +70,8 @@ async def stations(
 
 
 @router.get("/systems/{system_id}/stations/{station_id}")
-async def station(request: Request, system_id: str, station_id: str):
-    snapshot = await request.app.state.reads.snapshot(system_id)
+async def station(request: Request, system_id: str, station_id: str, access: LiveAccess):
+    snapshot = await request.app.state.reads.snapshot(system_id, access)
     row = next((row for row in snapshot["stations"] if row["station_id"] == station_id), None)
     if row is None:
         raise HTTPException(404, "station_not_found")
@@ -60,21 +82,32 @@ async def station(request: Request, system_id: str, station_id: str):
 async def history(
     request: Request,
     system_id: str,
+    access: LiveAccess,
     station_id: str,
     start: datetime,
     end: datetime,
     limit: Limit = 100,
     before: datetime | None = None,
 ):
-    interval(start, end, 90)
+    interval(start, end, 1 if access.role == "operator" else 90)
     if before and before.tzinfo is None:
         raise HTTPException(422, "before должен содержать часовой пояс")
     reads = request.app.state.reads
-    key = (system_id, "history", station_id, start, end, limit, before)
+    key = (system_id, "history", station_id, start, end, limit, before, access)
     return await reads.read(
         key,
         lambda: JSONResponse(
-            reads.query("history", system_id, station_id, start, end, limit, before, report=True)
+            reads.query(
+                "history",
+                system_id,
+                station_id,
+                start,
+                end,
+                limit,
+                before,
+                access=access,
+                report=True,
+            )
         ),
     )
 
@@ -83,14 +116,17 @@ async def history(
 async def events(
     request: Request,
     system_id: str,
+    access: LiveAccess,
     station_id: str,
     limit: Limit = 100,
     before: Annotated[int | None, Query(gt=0)] = None,
 ):
     reads = request.app.state.reads
     return await reads.read(
-        (system_id, "events", station_id, limit, before),
-        lambda: JSONResponse(reads.query("events", system_id, station_id, limit, before)),
+        (system_id, "events", station_id, limit, before, access),
+        lambda: JSONResponse(
+            reads.query("events", system_id, station_id, limit, before, access=access)
+        ),
     )
 
 
@@ -98,6 +134,7 @@ async def events(
 async def rollups(
     request: Request,
     system_id: str,
+    access: DataAccess,
     station_id: str,
     start: datetime,
     end: datetime,
@@ -109,40 +146,54 @@ async def rollups(
         resolution = "10m" if seconds <= 600 * 998 else "hour" if seconds <= 3600 * 998 else "day"
     reads = request.app.state.reads
     return await reads.read(
-        (system_id, "rollups", station_id, start, end, resolution),
+        (system_id, "rollups", station_id, start, end, resolution, access),
         lambda: JSONResponse(
-            reads.query("rollups", system_id, station_id, start, end, resolution, report=True)
+            reads.query(
+                "rollups", system_id, station_id, start, end, resolution, access=access, report=True
+            )
         ),
     )
 
 
 @router.get("/systems/{system_id}/stream")
-async def stream(request: Request, system_id: str):
+async def stream(request: Request, system_id: str, access: LiveAccess, user: CurrentUser):
     hub = request.app.state.stream
-    queue = hub.subscribe(system_id)
+    queue = hub.subscribe(system_id, access)
     try:
-        snapshot = await request.app.state.reads.snapshot(system_id)
+        snapshot = await request.app.state.reads.snapshot(system_id, access)
     except BaseException:
-        hub.unsubscribe(system_id, queue)
+        hub.unsubscribe(system_id, queue, access)
         raise
 
     async def messages():
         try:
             # Переподключение всегда начинает с актуального снимка: NOTIFY не хранит историю.
-            yield hub.initial_message(snapshot)
+            if time.time() >= user.exp:
+                yield encode_event("auth_expired", {"reason": "token_expired"})
+                return
+            yield hub.initial_message(snapshot, access)
             while True:
+                remaining = user.exp - time.time()
+                if remaining <= 0:
+                    yield encode_event("auth_expired", {"reason": "token_expired"})
+                    return
                 if await request.is_disconnected():
                     return
                 try:
-                    message = await asyncio.wait_for(queue.get(), hub.settings.sse_heartbeat_s)
+                    message = await asyncio.wait_for(
+                        queue.get(), min(hub.settings.sse_heartbeat_s, remaining)
+                    )
                 except TimeoutError:
                     yield ": heartbeat\n\n"
                     continue
+                if time.time() >= user.exp:
+                    yield encode_event("auth_expired", {"reason": "token_expired"})
+                    return
                 yield message
                 if "event: reset\n" in message:
                     return
         finally:
-            hub.unsubscribe(system_id, queue)
+            hub.unsubscribe(system_id, queue, access)
 
     return StreamingResponse(
         messages(),

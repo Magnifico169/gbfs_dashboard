@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import json
+import os
 import time
 from collections import Counter
 
@@ -13,7 +14,9 @@ async def run(url, users, duration):
     results = Counter()
     latencies = []
     async with httpx.AsyncClient(
-        limits=httpx.Limits(max_connections=users), timeout=httpx.Timeout(90, read=None)
+        headers={"Authorization": f"Bearer {os.environ['BENCH_TOKEN']}"},
+        limits=httpx.Limits(max_connections=users),
+        timeout=httpx.Timeout(90, read=None),
     ) as client:
 
         async def connect():
