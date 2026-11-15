@@ -31,12 +31,18 @@ class Database:
                 cls._instance.dispose()
                 cls._instance = None
 
-    def __init__(self, settings: Settings) -> None:
-        connect_args = {"options": f"-c role={settings.db_role}"} if settings.db_role else {}
+    def __init__(self, settings: Settings, *, pool_size: int = 5, max_overflow: int = 10) -> None:
+        options = f"-c statement_timeout={settings.db_statement_timeout_ms}"
+        if settings.db_role:
+            options += f" -c role={settings.db_role}"
+        connect_args = {"options": options, "connect_timeout": settings.db_connect_timeout_s}
         self.engine: Engine = create_engine(
             settings.database_url,
             pool_pre_ping=settings.db_pool_pre_ping,
             connect_args=connect_args,
+            pool_timeout=settings.db_connect_timeout_s,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
         )
         self._sessions = sessionmaker(self.engine, expire_on_commit=False)
 

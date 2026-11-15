@@ -17,6 +17,7 @@ from app.core.config.settings import Settings
 from app.core.database import Database
 from app.enums import IngestStatus
 from app.repositories.ingest import IngestRepository
+from app.repositories.notifications import snapshot_ready
 from app.repositories.reference import ReferenceRepository
 from app.repositories.station_state import StationStateRepository
 from app.schemas.gbfs import VehicleTypeRow
@@ -34,6 +35,7 @@ REFERENCE_FEEDS = ("system_information", "station_information", "vehicle_types",
 class IngestService:
     def __init__(self, session: Session, settings: Settings) -> None:
         self.settings = settings
+        self.session = session
         self.reference = ReferenceRepository(session)
         self.state = StationStateRepository(session)
 
@@ -62,6 +64,7 @@ class IngestService:
             self.reference.upsert_regions(
                 normalization.normalize_regions(feeds["system_regions"], system_id)
             )
+        snapshot_ready(self.session, system_id)
         return ReferenceResult(stations=len(stations), vehicle_types=vehicle_types)
 
     def apply_station_status(
@@ -84,7 +87,10 @@ class IngestService:
         rejected = [(row, reason) for row, reason in zip(status, reasons, strict=True) if reason]
         accepted = [row for row, reason in zip(status, reasons, strict=True) if not reason]
         self.state.quarantine(rejected, fetched_at)
-        written = self.state.write_status(accepted, system_id, fetched_at)
+        written = self.state.write_status(
+            accepted, system_id, fetched_at, self.settings.stale_after_s
+        )
+        snapshot_ready(self.session, system_id)
         return StatusCounts(
             rows_in=len(status), rows_written=written, rows_quarantined=len(rejected)
         )

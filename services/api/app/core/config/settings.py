@@ -46,6 +46,17 @@ class Settings(BaseSettings):
     # Валидация снимков
     future_tolerance_s: int = 300
 
+    # Чтение и доставка обновлений
+    stale_after_s: int = Field(300, gt=0)
+    read_cache_ttl_s: float = Field(3.0, gt=0)
+    read_cache_size: int = Field(256, ge=1)
+    read_concurrency: int = Field(16, ge=1)
+    sse_max_clients: int = Field(2000, ge=1)
+    sse_queue_size: int = Field(16, ge=1)
+    sse_heartbeat_s: float = Field(15.0, gt=0)
+    db_connect_timeout_s: int = Field(3, ge=1)
+    db_statement_timeout_ms: int = Field(5000, ge=1)
+
     # Приложение
     log_level: str = "INFO"
     app_title: str = "GBFS Dashboard"

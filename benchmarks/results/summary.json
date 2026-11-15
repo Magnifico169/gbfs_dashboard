@@ -1,0 +1,107 @@
+{
+  "date": "2026-11-16",
+  "environment": {
+    "api_workers": 1,
+    "cpu_visible": 32,
+    "wsl_memory_mib": 5923,
+    "postgres": "18",
+    "locust": "2.47.0",
+    "stations": 2500,
+    "duration_s": 45
+  },
+  "http": {
+    "1000": [
+      {
+        "endpoint": "annual_rollup",
+        "requests": 257,
+        "failures": 0,
+        "rps": 5.8261019026252265,
+        "p95_ms": 290.0,
+        "p99_ms": 320.0
+      },
+      {
+        "endpoint": "station",
+        "requests": 488,
+        "failures": 0,
+        "rps": 11.062792717825333,
+        "p95_ms": 380.0,
+        "p99_ms": 470.0
+      },
+      {
+        "endpoint": "stations",
+        "requests": 2109,
+        "failures": 0,
+        "rps": 47.81030705306071,
+        "p95_ms": 360.0,
+        "p99_ms": 470.0
+      },
+      {
+        "endpoint": "Aggregated",
+        "requests": 2854,
+        "failures": 0,
+        "rps": 64.69920167351127,
+        "p95_ms": 360.0,
+        "p99_ms": 470.0
+      }
+    ],
+    "10000": [
+      {
+        "endpoint": "annual_rollup",
+        "requests": 2500,
+        "failures": 353,
+        "rps": 55.26249815745734,
+        "p95_ms": 2800.0,
+        "p99_ms": 3100.0
+      },
+      {
+        "endpoint": "station",
+        "requests": 4994,
+        "failures": 710,
+        "rps": 110.39236631933677,
+        "p95_ms": 2800.0,
+        "p99_ms": 3100.0
+      },
+      {
+        "endpoint": "stations",
+        "requests": 20062,
+        "failures": 2872,
+        "rps": 443.47049521396366,
+        "p95_ms": 2800.0,
+        "p99_ms": 3100.0
+      },
+      {
+        "endpoint": "Aggregated",
+        "requests": 27556,
+        "failures": 3935,
+        "rps": 609.1253596907578,
+        "p95_ms": 2800.0,
+        "p99_ms": 3100.0
+      }
+    ],
+    "10000_failure_type": "HTTP 503 with Retry-After (admission control); no socket timeouts"
+  },
+  "sse_1000": {
+    "requested": 1000,
+    "results": {
+      "200": 1000
+    },
+    "ready": 1000,
+    "p95_connect_s": 16.69721829899936,
+    "active_at_end": 1000
+  },
+  "resilience": {
+    "baseline": 200,
+    "database_outage": 503,
+    "readiness": 503,
+    "liveness": 200,
+    "recovered": 200
+  },
+  "ingest_2500": {
+    "batches": 30,
+    "min_s": 0.37,
+    "max_s": 0.595,
+    "mean_s": 0.4417
+  },
+  "rollup_2500_elapsed_s": 100.343,
+  "ingest_stopped_quality": "stale"
+}
