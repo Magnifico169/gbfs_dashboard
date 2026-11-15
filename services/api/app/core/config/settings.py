@@ -32,14 +32,12 @@ class Settings(BaseSettings):
     db_pool_pre_ping: bool = True
 
     # HTTP-клиент к фидам GBFS
-    http_timeout_s: float = 15.0
-    http_max_tries: int = 3
+    http_timeout_s: float = Field(15.0, gt=0)
+    http_max_tries: int = Field(3, ge=1)
     http_user_agent: str = "gbfs-dashboard-ingest/0.1"
 
     # Приём данных
-    poll_interval_min_s: int = 10
-    poll_interval_max_s: int = 300
-    poll_backoff_max_s: int = 300
+    poll_timeout_s: int = Field(30, gt=0)
     reference_refresh_s: int = 3600
     worker_tick_s: float = 1.0
     partitions_days_ahead: int = 2

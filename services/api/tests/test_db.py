@@ -123,3 +123,58 @@ def test_scd2_opens_new_version_on_change(ingest_db):
 def test_ingest_role_cannot_change_system_settings(ingest_db):
     with pytest.raises(ProgrammingError, match="permission denied"), ingest_db.transaction() as s:
         s.add(SystemSetting(system_id="a", discovery_url="b"))
+
+
+@pytest.mark.parametrize("remaining", [0, 1])
+def test_scd2_closes_missing_stations_without_deleting_history(ingest_db, remaining):
+    stations = normalize_station_information(
+        read_fixture("synthetic_v3_0", "station_information"), "synthetic_v3"
+    )
+    now = datetime.now(UTC)
+    with ingest_db.transaction() as session:
+        ReferenceRepository(session).sync_stations(stations, "synthetic_v3", now)
+    with ingest_db.transaction() as session:
+        closed = ReferenceRepository(session).sync_stations(
+            stations[:remaining], "synthetic_v3", now + timedelta(hours=1)
+        )
+    assert closed == 3 - remaining
+    assert count(ingest_db, Station) == 3
+    with ingest_db.session() as session:
+        assert (
+            session.scalar(
+                select(func.count()).select_from(Station).where(Station.valid_to.is_(None))
+            )
+            == remaining
+        )
+
+
+@pytest.mark.parametrize("stations", [None, [{"station_id": "s1"}]])
+def test_malformed_station_reference_does_not_close_versions(ingest_db, stations):
+    feeds = {
+        name: read_fixture("synthetic_v3_0", name)
+        for name in ("system_information", "station_information")
+    }
+    with ingest_db.transaction() as session:
+        IngestService(session, SETTINGS).apply_reference("synthetic_v3", "3.0", feeds)
+    feeds["station_information"]["data"]["stations"] = stations
+    with pytest.raises(ValueError), ingest_db.transaction() as session:
+        IngestService(session, SETTINGS).apply_reference("synthetic_v3", "3.0", feeds)
+    with ingest_db.session() as session:
+        assert (
+            session.scalar(
+                select(func.count()).select_from(Station).where(Station.valid_to.is_(None))
+            )
+            == 3
+        )
+
+
+def test_migration_matches_models_and_round_trips(pg_database):
+    from alembic import command
+    from alembic.config import Config
+    from conftest import API_DIR
+
+    config = Config(str(API_DIR / "alembic.ini"))
+    command.check(config)
+    command.downgrade(config, "base")
+    command.upgrade(config, "head")
+    command.check(config)

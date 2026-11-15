@@ -1,6 +1,6 @@
 """Схема M1: core, mart, app, партиции, роли и права.
 
-Таблицы сгенерированы по моделям gbfs_db.models; здесь же — то, чего в моделях нет:
+Таблицы сгенерированы по моделям app.models; здесь же — то, чего в моделях нет:
 схемы, функция суточных партиций, роли БД и гранты (ADR-0002, п. 3).
 
 Revision ID: 0001
@@ -37,7 +37,19 @@ def upgrade() -> None:
 
     op.create_table(
         "ingest_run",
-        sa.Column("run_id", sa.BigInteger(), sa.Identity(always=False), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("id", sa.BigInteger(), sa.Identity(always=False), nullable=False),
         sa.Column("system_id", sa.Text(), nullable=False),
         sa.Column("feed", sa.Text(), nullable=False),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
@@ -47,9 +59,8 @@ def upgrade() -> None:
         sa.Column("rows_in", sa.Integer(), server_default=sa.text("0"), nullable=False),
         sa.Column("rows_written", sa.Integer(), server_default=sa.text("0"), nullable=False),
         sa.Column("rows_quarantined", sa.Integer(), server_default=sa.text("0"), nullable=False),
-        sa.Column("error", sa.Text(), nullable=True),
         sa.CheckConstraint("status in ('ok', 'not_modified', 'error')", name="ingest_run_status"),
-        sa.PrimaryKeyConstraint("run_id"),
+        sa.PrimaryKeyConstraint("id"),
         schema="app",
     )
     op.create_index(
@@ -61,31 +72,61 @@ def upgrade() -> None:
     )
     op.create_table(
         "system_setting",
-        sa.Column("system_id", sa.Text(), nullable=False),
-        sa.Column("discovery_url", sa.Text(), nullable=False),
-        sa.Column("enabled", sa.Boolean(), server_default=sa.text("true"), nullable=False),
-        sa.Column("poll_interval_s", sa.Integer(), nullable=True),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
             nullable=False,
         ),
+        sa.Column("system_id", sa.Text(), nullable=False),
+        sa.Column("discovery_url", sa.Text(), nullable=False),
+        sa.Column("enabled", sa.Boolean(), server_default=sa.text("true"), nullable=False),
+        sa.Column("poll_interval_s", sa.Integer(), nullable=True),
         sa.CheckConstraint("poll_interval_s > 0", name="system_setting_poll_interval_s_check"),
         sa.PrimaryKeyConstraint("system_id"),
         schema="app",
     )
     op.create_table(
         "region",
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.Column("system_id", sa.Text(), nullable=False),
-        sa.Column("region_id", sa.Text(), nullable=False),
+        sa.Column("id", sa.Text(), nullable=False),
         sa.Column("name", sa.Text(), nullable=False),
-        sa.PrimaryKeyConstraint("system_id", "region_id"),
+        sa.PrimaryKeyConstraint("system_id", "id"),
         schema="core",
     )
     op.create_table(
         "station",
-        sa.Column("station_pk", sa.BigInteger(), sa.Identity(always=False), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("id", sa.BigInteger(), sa.Identity(always=False), nullable=False),
         sa.Column("system_id", sa.Text(), nullable=False),
         sa.Column("station_id", sa.Text(), nullable=False),
         sa.Column("name", sa.Text(), nullable=False),
@@ -97,7 +138,7 @@ def upgrade() -> None:
         sa.Column("capacity", sa.Integer(), nullable=True),
         sa.Column("valid_from", sa.DateTime(timezone=True), nullable=False),
         sa.Column("valid_to", sa.DateTime(timezone=True), nullable=True),
-        sa.PrimaryKeyConstraint("station_pk"),
+        sa.PrimaryKeyConstraint("id"),
         schema="core",
     )
     op.create_index(
@@ -110,6 +151,18 @@ def upgrade() -> None:
     )
     op.create_table(
         "station_current",
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.Column("system_id", sa.Text(), nullable=False),
         sa.Column("station_id", sa.Text(), nullable=False),
         sa.Column("fetched_at", sa.DateTime(timezone=True), nullable=False),
@@ -128,13 +181,25 @@ def upgrade() -> None:
     )
     op.create_table(
         "station_event",
-        sa.Column("event_id", sa.BigInteger(), sa.Identity(always=False), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("id", sa.BigInteger(), sa.Identity(always=False), nullable=False),
         sa.Column("system_id", sa.Text(), nullable=False),
         sa.Column("station_id", sa.Text(), nullable=False),
         sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("event_type", sa.Text(), nullable=False),
         sa.Column("details", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.PrimaryKeyConstraint("event_id"),
+        sa.PrimaryKeyConstraint("id"),
         schema="core",
     )
     op.create_index(
@@ -146,13 +211,25 @@ def upgrade() -> None:
     )
     op.create_table(
         "station_quarantine",
-        sa.Column("quarantine_id", sa.BigInteger(), sa.Identity(always=False), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("id", sa.BigInteger(), sa.Identity(always=False), nullable=False),
         sa.Column("system_id", sa.Text(), nullable=False),
         sa.Column("station_id", sa.Text(), nullable=False),
         sa.Column("fetched_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("reason", sa.Text(), nullable=False),
         sa.Column("payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.PrimaryKeyConstraint("quarantine_id"),
+        sa.PrimaryKeyConstraint("id"),
         schema="core",
     )
     op.create_index(
@@ -164,6 +241,18 @@ def upgrade() -> None:
     )
     op.create_table(
         "station_status",
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.Column("system_id", sa.Text(), nullable=False),
         sa.Column("station_id", sa.Text(), nullable=False),
         sa.Column("fetched_at", sa.DateTime(timezone=True), nullable=False),
@@ -182,30 +271,48 @@ def upgrade() -> None:
     )
     op.create_table(
         "system",
-        sa.Column("system_id", sa.Text(), nullable=False),
-        sa.Column("name", sa.Text(), nullable=False),
-        sa.Column("operator", sa.Text(), nullable=True),
-        sa.Column("timezone", sa.Text(), nullable=False),
-        sa.Column("language", sa.Text(), nullable=True),
-        sa.Column("gbfs_version", sa.Text(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.PrimaryKeyConstraint("system_id"),
+        sa.Column("id", sa.Text(), nullable=False),
+        sa.Column("name", sa.Text(), nullable=False),
+        sa.Column("operator", sa.Text(), nullable=True),
+        sa.Column("timezone", sa.Text(), nullable=False),
+        sa.Column("language", sa.Text(), nullable=True),
+        sa.Column("gbfs_version", sa.Text(), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
         schema="core",
     )
     op.create_table(
         "vehicle_type",
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.Column("system_id", sa.Text(), nullable=False),
-        sa.Column("vehicle_type_id", sa.Text(), nullable=False),
+        sa.Column("id", sa.Text(), nullable=False),
         sa.Column("form_factor", sa.Text(), nullable=False),
         sa.Column("propulsion_type", sa.Text(), nullable=False),
         sa.Column("name", sa.Text(), nullable=True),
         sa.Column("max_range_meters", sa.Double(), nullable=True),
-        sa.PrimaryKeyConstraint("system_id", "vehicle_type_id"),
+        sa.PrimaryKeyConstraint("system_id", "id"),
         schema="core",
     )
 

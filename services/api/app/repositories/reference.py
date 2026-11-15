@@ -18,7 +18,7 @@ class ReferenceRepository:
     def upsert_system(self, info: SystemInfo, gbfs_version: str) -> None:
         self.session.merge(
             System(
-                system_id=info.system_id,
+                id=info.system_id,
                 name=info.name or info.system_id,
                 operator=info.operator,
                 timezone=info.timezone or "UTC",
@@ -30,18 +30,20 @@ class ReferenceRepository:
 
     def upsert_regions(self, regions: list[RegionRow]) -> None:
         for region in regions:
-            self.session.merge(Region(**region.model_dump()))
+            data = region.model_dump()
+            data["id"] = data.pop("region_id")
+            self.session.merge(Region(**data))
 
     def upsert_vehicle_types(self, vehicle_types: list[VehicleTypeRow]) -> None:
         for vehicle_type in vehicle_types:
-            self.session.merge(VehicleType(**vehicle_type.model_dump()))
+            data = vehicle_type.model_dump()
+            data["id"] = data.pop("vehicle_type_id")
+            self.session.merge(VehicleType(**data))
 
     def sync_stations(self, stations: list[StationInfoRow], system_id: str, now: datetime) -> int:
         """SCD2: изменившуюся или пропавшую из фида станцию закрываем, изменившуюся открываем
         заново. Возвращает число закрытых версий.
         """
-        if not stations:
-            return 0
         current = {
             station.station_id: station
             for station in self.session.scalars(

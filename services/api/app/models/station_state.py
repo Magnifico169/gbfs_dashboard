@@ -2,11 +2,11 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, Identity, Index, Integer, Text, text
+from sqlalchemy import Boolean, DateTime, Index, Integer, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import TIMESTAMPTZ, Base
+from app.models.base import Base, Entity
 
 
 class StationStateMixin:
@@ -14,7 +14,9 @@ class StationStateMixin:
     86400): это «неизвестно», а не «0 доступно». Необязательные в GBFS счётчики могут быть None.
     """
 
-    reported_at: Mapped[datetime | None] = mapped_column(TIMESTAMPTZ)
+    reported_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), info={"compare_state": False}
+    )
     bikes_available: Mapped[int] = mapped_column(Integer)
     ebikes_available: Mapped[int | None] = mapped_column(Integer)
     bikes_disabled: Mapped[int | None] = mapped_column(Integer)
@@ -24,17 +26,13 @@ class StationStateMixin:
     is_renting: Mapped[bool] = mapped_column(Boolean)
     is_returning: Mapped[bool] = mapped_column(Boolean)
 
-
-STATE_COLUMNS = (
-    "bikes_available",
-    "ebikes_available",
-    "bikes_disabled",
-    "docks_available",
-    "docks_disabled",
-    "is_installed",
-    "is_renting",
-    "is_returning",
-)
+    @classmethod
+    def state_columns(cls) -> tuple[str, ...]:
+        return tuple(
+            name
+            for name in StationStateMixin.__annotations__
+            if getattr(cls, name).property.columns[0].info.get("compare_state", True)
+        )
 
 
 class StationCurrent(StationStateMixin, Base):
@@ -43,8 +41,12 @@ class StationCurrent(StationStateMixin, Base):
 
     system_id: Mapped[str] = mapped_column(Text, primary_key=True)
     station_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    fetched_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ)  # когда состояние изменилось
-    checked_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ)  # последняя сверка с фидом
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True)
+    )  # когда состояние изменилось
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True)
+    )  # последняя сверка с фидом
 
 
 class StationStatus(StationStateMixin, Base):
@@ -55,10 +57,10 @@ class StationStatus(StationStateMixin, Base):
 
     system_id: Mapped[str] = mapped_column(Text, primary_key=True)
     station_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    fetched_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, primary_key=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
 
 
-class StationEvent(Base):
+class StationEvent(Entity):
     """Создаётся в M1, наполняется с M2 (вывод событий из дельт)."""
 
     __tablename__ = "station_event"
@@ -67,24 +69,22 @@ class StationEvent(Base):
         {"schema": "core"},
     )
 
-    event_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     system_id: Mapped[str] = mapped_column(Text)
     station_id: Mapped[str] = mapped_column(Text)
-    occurred_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     event_type: Mapped[str] = mapped_column(Text)
     details: Mapped[dict | None] = mapped_column(JSONB)
 
 
-class StationQuarantine(Base):
+class StationQuarantine(Entity):
     __tablename__ = "station_quarantine"
     __table_args__ = (
         Index("ix_station_quarantine_system_time", "system_id", text("fetched_at desc")),
         {"schema": "core"},
     )
 
-    quarantine_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     system_id: Mapped[str] = mapped_column(Text)
     station_id: Mapped[str] = mapped_column(Text)
-    fetched_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     reason: Mapped[str] = mapped_column(Text)
     payload: Mapped[dict] = mapped_column(JSONB)

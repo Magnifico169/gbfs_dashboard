@@ -45,7 +45,7 @@ def pg_database(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
         command.upgrade(config, "head")
         yield name
     finally:
-        get_database.cache_clear()
+        Database.reset_instance()
         get_settings.cache_clear()
         with admin.connect() as conn:
             conn.execute(text(f"drop database if exists {name} with (force)"))
@@ -57,7 +57,7 @@ def ingest_db(pg_database: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[Dat
     """Соединение под ролью приёма: границу прав проверяет сама БД."""
     monkeypatch.setenv("DB_ROLE", INGEST_ROLE)
     get_settings.cache_clear()
-    get_database.cache_clear()
+    Database.reset_instance()
     database = get_database()
     yield database
     database.dispose()

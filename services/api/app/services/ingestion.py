@@ -6,11 +6,10 @@ IngestService принимает уже разобранный JSON и не хо
 """
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from fastapi import status
-from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.clients.gbfs import GbfsClient
@@ -24,12 +23,12 @@ from app.schemas.gbfs import VehicleTypeRow
 from app.schemas.ingest import FetchResult, ReferenceResult, StatusCounts
 from app.schemas.types import to_int
 from app.services import normalization
+from app.services.models import SystemState
 from app.services.validation import validate_station_status
 
 log = logging.getLogger("gbfs_ingest")
 
 REFERENCE_FEEDS = ("system_information", "station_information", "vehicle_types", "system_regions")
-EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 class IngestService:
@@ -91,28 +90,13 @@ class IngestService:
         )
 
 
-class SystemState(BaseModel):
-    """Состояние опроса одной системы между циклами."""
-
-    system_id: str
-    discovery_url: str
-    poll_interval_s: int | None = None
-    version: str | None = None
-    feed_urls: dict[str, str] = Field(default_factory=dict)
-    vehicle_types: list[VehicleTypeRow] | None = None
-    etags: dict[str, str] = Field(default_factory=dict)
-    reference_at: datetime = EPOCH
-    next_due: datetime = EPOCH
-    failures: int = 0
-    ttl: int = 0
-
-
 class Poller:
     def __init__(self, database: Database, client: GbfsClient, settings: Settings) -> None:
         self.database = database
         self.client = client
         self.settings = settings
         self.states: dict[str, SystemState] = {}
+        self._partitions_date: date | None = None
 
     def _log_run(self, state: SystemState, feed: str, started_at: datetime, **kwargs: Any) -> None:
         with self.database.transaction() as session:
@@ -122,45 +106,67 @@ class Poller:
         """Забирает фид и пишет запуск в журнал; ошибка возвращается значением."""
         started_at = datetime.now(UTC)
         result = self.client.fetch_json(url, state.etags.get(url))
-        if result.etag:
-            state.etags[url] = result.etag
         if result.error:
-            status = IngestStatus.ERROR
+            run_status = IngestStatus.ERROR
         elif result.status == status.HTTP_304_NOT_MODIFIED:
-            status = IngestStatus.NOT_MODIFIED
+            run_status = IngestStatus.NOT_MODIFIED
         else:
-            status = IngestStatus.OK
+            run_status = IngestStatus.OK
         # успешный station_status пишется вместе с данными, с числом строк
-        if feed != "station_status" or status != IngestStatus.OK:
+        if feed != "station_status" or run_status != IngestStatus.OK:
             self._log_run(
                 state,
                 feed,
                 started_at,
-                status=status,
+                status=run_status,
                 http_status=result.status,
                 error=result.error,
             )
         return result
 
-    def refresh_reference(self, state: SystemState, now: datetime) -> None:
-        discovery = self._fetch(state, "gbfs", state.discovery_url)
-        if discovery.body is None:
-            raise RuntimeError(f"discovery: {discovery.error or 'пустой ответ'}")
-        parsed = normalization.parse_discovery(discovery.body)
-        state.version, state.feed_urls = parsed.version, parsed.feeds
+    @staticmethod
+    def _remember(state: SystemState, url: str, result: FetchResult) -> None:
+        if result.status == status.HTTP_304_NOT_MODIFIED:
+            return
+        if result.etag:
+            state.etags[url] = result.etag
+        else:
+            state.etags.pop(url, None)
+        if result.body is not None:
+            state.bodies[url] = result.body
 
-        feeds = {}
-        for feed in REFERENCE_FEEDS:
-            if feed in parsed.feeds:
-                result = self._fetch(state, feed, parsed.feeds[feed])
-                if result.body is not None:
-                    feeds[feed] = result.body
+    def refresh_reference(self, state: SystemState, now: datetime) -> None:
+        pending: dict[str, FetchResult] = {}
+
+        def fetch(feed: str, url: str) -> dict[str, Any]:
+            result = self._fetch(state, feed, url)
+            if result.error:
+                raise RuntimeError(f"{feed}: {result.error}")
+            body = (
+                state.bodies.get(url)
+                if result.status == status.HTTP_304_NOT_MODIFIED
+                else result.body
+            )
+            if body is None:
+                raise RuntimeError(f"{feed}: пустой ответ без сохранённого фида")
+            pending[url] = result
+            return body
+
+        parsed = normalization.parse_discovery(fetch("gbfs", state.discovery_url))
+        feeds = {
+            feed: fetch(feed, parsed.feeds[feed])
+            for feed in REFERENCE_FEEDS
+            if feed in parsed.feeds
+        }
         if "system_information" not in feeds or "station_information" not in feeds:
             raise RuntimeError("справочные фиды недоступны")
         with self.database.transaction() as session:
             reference = IngestService(session, self.settings).apply_reference(
-                state.system_id, state.version or "", feeds, now
+                state.system_id, parsed.version or "", feeds, now
             )
+        for url, result in pending.items():
+            self._remember(state, url, result)
+        state.version, state.feed_urls = parsed.version, parsed.feeds
         state.vehicle_types = reference.vehicle_types
         state.reference_at = now
         log.info("%s: справочники обновлены, станций %d", state.system_id, reference.stations)
@@ -178,12 +184,19 @@ class Poller:
         result = self._fetch(state, "station_status", url)
         if result.error:
             raise RuntimeError(f"station_status: {result.error}")
-        if result.status == status.HTTP_304_NOT_MODIFIED or result.body is None:
+        if result.status == status.HTTP_304_NOT_MODIFIED:
+            with self.database.transaction() as session:
+                StationStateRepository(session).touch_current(
+                    state.system_id, state.status_checked_at, now
+                )
+            state.status_checked_at = now
             return
+        if result.body is None:
+            raise RuntimeError("station_status: пустой ответ")
         try:
             with self.database.transaction() as session:
                 counts = IngestService(session, self.settings).apply_station_status(
-                    state.system_id, result.body, state.vehicle_types
+                    state.system_id, result.body, state.vehicle_types, fetched_at=started_at
                 )
                 IngestRepository(session).log_run(
                     state.system_id,
@@ -204,6 +217,8 @@ class Poller:
                 error=f"запись: {exc}"[:500],
             )
             raise
+        self._remember(state, url, result)
+        state.status_checked_at = started_at
         state.ttl = to_int(result.body.get("ttl")) or 0
         log.info(
             "%s: принято %d, записано %d, в карантине %d",
@@ -214,28 +229,30 @@ class Poller:
         )
 
     def schedule_next(self, state: SystemState, now: datetime, ok: bool) -> None:
-        cfg = self.settings
+        interval = state.poll_interval_s or self.settings.poll_timeout_s
         if ok:
-            state.failures = 0
-            ttl = min(max(state.ttl, cfg.poll_interval_min_s), cfg.poll_interval_max_s)
-            interval = state.poll_interval_s or ttl
-        else:
-            state.failures += 1
-            interval = min(cfg.poll_interval_min_s * 2**state.failures, cfg.poll_backoff_max_s)
+            interval = max(interval, state.ttl)
         state.next_due = now + timedelta(seconds=interval)
 
     def poll_due_systems(self, now: datetime | None = None) -> None:
         now = now or datetime.now(UTC)
         with self.database.transaction() as session:
-            StationStateRepository(session).ensure_partitions(self.settings.partitions_days_ahead)
+            if self._partitions_date != now.date():
+                StationStateRepository(session).ensure_partitions(
+                    self.settings.partitions_days_ahead
+                )
             settings = [
                 (s.system_id, s.discovery_url, s.poll_interval_s)
                 for s in IngestRepository(session).enabled_systems()
             ]
+        self._partitions_date = now.date()
+        enabled_ids = {system_id for system_id, _, _ in settings}
+        self.states = {key: value for key, value in self.states.items() if key in enabled_ids}
         for system_id, discovery_url, poll_interval_s in settings:
-            state = self.states.setdefault(
-                system_id, SystemState(system_id=system_id, discovery_url=discovery_url)
-            )
+            state = self.states.get(system_id)
+            if state is None or state.discovery_url != discovery_url:
+                state = SystemState(system_id=system_id, discovery_url=discovery_url)
+                self.states[system_id] = state
             state.poll_interval_s = poll_interval_s
             if now < state.next_due:
                 continue

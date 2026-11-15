@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+import pytest
 from conftest import read_fixture
 
 from app.core.config.settings import get_settings
@@ -86,7 +87,7 @@ def test_without_vehicle_types_uses_num_ebikes_available():
     assert any((row.ebikes_available or 0) > 0 for row in status)
 
 
-def test_incomplete_records_are_dropped():
+def test_incomplete_station_reference_is_rejected():
     feed = {
         "data": {
             "stations": [
@@ -96,4 +97,55 @@ def test_incomplete_records_are_dropped():
             ]
         }
     }
-    assert [s.station_id for s in normalize_station_information(feed, "x")] == ["a"]
+    with pytest.raises(ValueError, match="некорректный список"):
+        normalize_station_information(feed, "x")
+
+
+@pytest.mark.parametrize("value", [1.5, float("inf"), float("nan"), "not a number"])
+def test_invalid_required_counter_reaches_validation(value):
+    from app.services.validation import validate_station_status
+
+    feed = {
+        "data": {
+            "stations": [
+                {
+                    "station_id": "s1",
+                    "num_bikes_available": value,
+                    "is_installed": True,
+                    "is_renting": True,
+                    "is_returning": True,
+                }
+            ]
+        }
+    }
+    rows = normalize_station_status(feed, "x", None, ELECTRIC)
+    assert len(rows) == 1
+    assert validate_station_status(rows, None, datetime.now(UTC), 300) == [
+        "missing_field:bikes_available"
+    ]
+
+
+@pytest.mark.parametrize("value", [-1, 2, float("nan")])
+def test_invalid_flag_is_not_converted_to_true(value):
+    from app.schemas.types import to_flag
+
+    assert to_flag(value) is None
+
+
+def test_naive_timestamp_has_consistent_utc_meaning(monkeypatch):
+    import os
+    import time
+
+    from app.schemas.types import to_utc
+
+    old_tz = os.environ.get("TZ")
+    monkeypatch.setenv("TZ", "America/New_York")
+    time.tzset()
+    try:
+        assert to_utc("2026-11-01T12:00:00") == datetime(2026, 11, 1, 12, tzinfo=UTC)
+    finally:
+        if old_tz is None:
+            monkeypatch.delenv("TZ")
+        else:
+            monkeypatch.setenv("TZ", old_tz)
+        time.tzset()

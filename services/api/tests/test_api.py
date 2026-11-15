@@ -21,14 +21,14 @@ def test_readyz_with_database(pg_database):
 def test_readyz_without_database(monkeypatch):
     monkeypatch.setenv("PGPORT", "1")
     from app.core.config.settings import get_settings
-    from app.core.database import get_database
+    from app.core.database import Database
 
     get_settings.cache_clear()
-    get_database.cache_clear()
+    Database.reset_instance()
     try:
         with TestClient(create_app()) as client:
             response = client.get("/readyz")
     finally:
-        get_database.cache_clear()
+        Database.reset_instance()
         get_settings.cache_clear()
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE

@@ -1,6 +1,5 @@
-"""Воркер приёма: без аргументов крутится циклом, с --once делает один проход."""
+"""Воркер периодического приёма фидов GBFS."""
 
-import argparse
 import logging
 import time
 
@@ -11,10 +10,6 @@ from app.services.ingestion import Poller
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Приём фидов GBFS в PostgreSQL")
-    parser.add_argument("--once", action="store_true", help="один проход без цикла")
-    args = parser.parse_args()
-
     settings = get_settings()
     logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(message)s")
     client = GbfsClient(settings)
@@ -22,8 +17,6 @@ def main() -> None:
     try:
         while True:
             poller.poll_due_systems()
-            if args.once:
-                break
             time.sleep(settings.worker_tick_s)
     finally:
         client.close()

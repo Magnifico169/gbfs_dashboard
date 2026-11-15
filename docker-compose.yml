@@ -58,7 +58,7 @@ services:
     ports:
       - "${API_PORT:-8000}:8000"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/livez')"]
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/readyz')"]
       interval: 10s
       timeout: 3s
       retries: 5

@@ -4,6 +4,7 @@ true/false, время то unix-секундами (v1/v2), то строкой
 превращается в None; обязательность поля проверяет сама модель.
 """
 
+import math
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -34,8 +35,10 @@ def to_int(value: Any) -> int | None:
     if value is None or isinstance(value, bool):
         return None
     try:
+        if isinstance(value, float) and not value.is_integer():
+            return None
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -43,8 +46,9 @@ def to_float(value: Any) -> float | None:
     if value is None or isinstance(value, bool):
         return None
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else None
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -55,8 +59,8 @@ def to_str(value: Any) -> str | None:
 def to_flag(value: Any) -> bool | None:
     if isinstance(value, bool):
         return value
-    if isinstance(value, int | float):
-        return value != 0
+    if isinstance(value, int | float) and value in (0, 1):
+        return bool(value)
     if isinstance(value, str) and value.lower() in {"true", "1", "false", "0"}:
         return value.lower() in {"true", "1"}
     return None
@@ -72,7 +76,9 @@ def to_utc(value: Any) -> datetime | None:
         if isinstance(value, int | float):
             parsed = datetime.fromtimestamp(value, UTC)
         else:
-            parsed = datetime.fromisoformat(str(value)).astimezone(UTC)
+            parsed = datetime.fromisoformat(str(value))
+            parsed = parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
+            parsed = parsed.astimezone(UTC)
     except (ValueError, OverflowError, OSError):
         return None
     return None if parsed < EPOCH_SENTINEL else parsed

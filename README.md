@@ -48,7 +48,6 @@ uv.lock              зафиксированные версии зависим�
 fixtures/            сохранённые фиды GBFS для тестов (Citi Bike v2.3, синтетический v3.0)
 docker-compose.yml   окружение: PostgreSQL 18, миграции, приём, API
 .env.example         шаблон переменных окружения
-pyproject.toml       настройки ruff (Python)
 .lintr               настройки lintr (R)
 .github/workflows/   CI: статический анализ
 CHANGELOG.md         журнал изменений
@@ -76,16 +75,10 @@ cp .env.example .env
 docker compose up -d --wait
 ```
 
-Команда поднимает PostgreSQL, применяет миграции (`migrate`), запускает приём (`ingest`) и API (`api`, порт 8000; проверка: `curl localhost:8000/readyz`). Статус приёма:
+Команда поднимает PostgreSQL, применяет миграции (`migrate`), запускает приём (`ingest`) и API (`api`, порт 8000; проверка: `curl localhost:8000/readyz`). Healthcheck API использует `/readyz`: контейнер готов, когда отвечает база. Статус приёма:
 
 ```bash
-docker compose exec postgres psql -U gbfs -d gbfs -c "select feed, status, rows_in, rows_written, rows_quarantined from app.ingest_run order by run_id desc limit 10"
-```
-
-Один проход приёма без цикла:
-
-```bash
-docker compose run --rm ingest python -m app.worker --once
+docker compose exec postgres psql -U gbfs -d gbfs -c "select feed, status, rows_in, rows_written, rows_quarantined from app.ingest_run order by id desc limit 10"
 ```
 
 PostgreSQL будет доступен на `localhost:5433` (порт меняется через `POSTGRES_PORT`; 5433 выбран, чтобы не конфликтовать с локальным PostgreSQL на 5432).
@@ -116,7 +109,7 @@ docker compose down -v
 uv sync
 ```
 
-Все параметры сервиса — в [settings.py](services/api/app/core/config/settings.py); читаются из переменных окружения и `.env` (имена `PG*` и `POSTGRES_*` равноправны), поэтому локально отдельная настройка не нужна.
+Все параметры сервиса — в [settings.py](services/api/app/core/config/settings.py); читаются из переменных окружения и `.env` (имена `PG*` и `POSTGRES_*` равноправны), поэтому локально отдельная настройка не нужна. `HTTP_TIMEOUT_S` ограничивает ожидание HTTP-ответа, `POLL_TIMEOUT_S` задаёт паузу между опросами (30 секунд по умолчанию). Интервал системы из `app.system_setting` имеет приоритет, при успешном ответе интервал не короче TTL фида. Справочники обновляются отдельно раз в `REFERENCE_REFRESH_S`. Ошибки приёма выводятся в журнал процесса (`docker compose logs ingest`); в `app.ingest_run` хранятся статусы и счётчики.
 
 Тесты. Интеграционные используют PostgreSQL из compose: на каждый тест создаётся отдельная база, схема накатывается настоящим Alembic.
 
@@ -131,7 +124,7 @@ cd services/api && uv run uvicorn app.main:app --reload
 ```
 
 ```bash
-cd services/api && uv run python -m app.worker --once
+cd services/api && uv run python -m app.worker
 ```
 
 Миграции. После изменения моделей в `app/models/` ревизия генерируется на пустой базе и правится вручную (схемы, роли, гранты):
@@ -176,7 +169,7 @@ Rscript -e 'lintr::lint_dir(".")'
 | Веха | Результат |
 |---|---|
 | M0 | Концепт и ADR |
-| M1 | Приём данных на R: Citi Bike, нормализация v2/v3, валидация; схема PostgreSQL *(текущая)* |
+| M1 | Приём данных на Python: Citi Bike, нормализация v2/v3, валидация; схема PostgreSQL *(текущая)* |
 | M2 | `station_current`, ролл-апы, API чтения, SSE; нагрузочный замер |
 | M3 | Python API: аутентификация, роли, зоны |
 | M4 | Экран оператора с обработкой ошибок |

@@ -58,7 +58,18 @@ def normalize_vehicle_types(feed: dict[str, Any], system_id: str) -> list[Vehicl
 
 
 def normalize_station_information(feed: dict[str, Any], system_id: str) -> list[StationInfoRow]:
-    return _parse_all(StationInfoRow, _items(feed, "stations"), system_id)
+    data = feed.get("data")
+    if not isinstance(data, dict) or not isinstance(data.get("stations"), list):
+        raise ValueError("station_information: отсутствует список станций")
+    items = data["stations"]
+    rows = _parse_all(StationInfoRow, items, system_id)
+    if (
+        len(rows) != len(items)
+        or any(not row.station_id for row in rows)
+        or len({row.station_id for row in rows}) != len(rows)
+    ):
+        raise ValueError("station_information: неполный или некорректный список станций")
+    return rows
 
 
 def electric_vehicle_type_ids(

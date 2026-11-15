@@ -3,20 +3,18 @@
 from datetime import datetime
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     CheckConstraint,
-    Identity,
+    DateTime,
     Index,
     Integer,
     Text,
-    func,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.enums import IngestStatus
-from app.models.base import TIMESTAMPTZ, Base
+from app.models.base import Base, Entity
 
 INGEST_STATUSES = ", ".join(f"'{status.value}'" for status in IngestStatus)
 
@@ -33,12 +31,11 @@ class SystemSetting(Base):
     system_id: Mapped[str] = mapped_column(Text, primary_key=True)
     discovery_url: Mapped[str] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
-    # None — брать ttl из фида
+    # None — использовать POLL_TIMEOUT_S; успешный опрос учитывает TTL фида
     poll_interval_s: Mapped[int | None] = mapped_column(Integer)
-    updated_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, server_default=func.now())
 
 
-class IngestRun(Base):
+class IngestRun(Entity):
     __tablename__ = "ingest_run"
     __table_args__ = (
         CheckConstraint(f"status in ({INGEST_STATUSES})", name="ingest_run_status"),
@@ -46,14 +43,12 @@ class IngestRun(Base):
         {"schema": "app"},
     )
 
-    run_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     system_id: Mapped[str] = mapped_column(Text)
     feed: Mapped[str] = mapped_column(Text)
-    started_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ)
-    finished_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(Text)
     http_status: Mapped[int | None] = mapped_column(Integer)
     rows_in: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     rows_written: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     rows_quarantined: Mapped[int] = mapped_column(Integer, server_default=text("0"))
-    error: Mapped[str | None] = mapped_column(Text)

@@ -5,7 +5,7 @@ from datetime import datetime
 from sqlalchemy import func, insert, select, update
 from sqlalchemy.orm import Session
 
-from app.models import STATE_COLUMNS, StationCurrent, StationQuarantine, StationStatus
+from app.models import StationCurrent, StationQuarantine, StationStatus
 from app.schemas.gbfs import StationStatusRow
 
 
@@ -15,6 +15,20 @@ class StationStateRepository:
 
     def ensure_partitions(self, days_ahead: int) -> None:
         self.session.execute(select(func.core.ensure_station_status_partitions(days_ahead)))
+
+    def touch_current(
+        self, system_id: str, previous_check: datetime | None, checked_at: datetime
+    ) -> None:
+        if previous_check is None:
+            return
+        self.session.execute(
+            update(StationCurrent)
+            .where(
+                StationCurrent.system_id == system_id,
+                StationCurrent.checked_at == previous_check,
+            )
+            .values(checked_at=checked_at)
+        )
 
     def quarantine(self, rows: list[tuple[StationStatusRow, str]], fetched_at: datetime) -> None:
         self.session.add_all(
@@ -36,19 +50,20 @@ class StationStateRepository:
         """
         if not rows:
             return 0
+        state_columns = StationCurrent.state_columns()
         known = {
             row.station_id: tuple(row[1:])
             for row in self.session.execute(
                 select(
                     StationCurrent.station_id,
-                    *(getattr(StationCurrent, c) for c in STATE_COLUMNS),
+                    *(getattr(StationCurrent, c) for c in state_columns),
                 ).where(StationCurrent.system_id == system_id)
             )
         }
         facts, new_current, changed_current, touched_current = [], [], [], []
         for row in rows:
             data = row.model_dump()
-            state = tuple(data[c] for c in STATE_COLUMNS)
+            state = tuple(data[c] for c in state_columns)
             stamped = {**data, "fetched_at": fetched_at, "checked_at": fetched_at}
             if row.station_id not in known:
                 facts.append({**data, "fetched_at": fetched_at})

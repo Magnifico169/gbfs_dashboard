@@ -1,5 +1,6 @@
 """Настройки систем и журнал запусков приёма."""
 
+import logging
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -28,6 +29,8 @@ class IngestRepository:
         rows_quarantined: int = 0,
         error: str | None = None,
     ) -> None:
+        if error:
+            logging.getLogger("gbfs_ingest").error("%s %s: %s", system_id, feed, error)
         self.session.add(
             IngestRun(
                 system_id=system_id,
@@ -39,6 +42,5 @@ class IngestRepository:
                 rows_in=rows_in,
                 rows_written=rows_written,
                 rows_quarantined=rows_quarantined,
-                error=error,
             )
         )
