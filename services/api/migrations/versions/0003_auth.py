@@ -1,7 +1,7 @@
 """M3: пользователи, зоны, сеансы, RLS и роли чтения.
 
 Revision ID: 0003
-Revises: 0002
+Revises: 0002a
 """
 
 import sqlalchemy as sa
@@ -9,7 +9,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "0003"
-down_revision = "0002"
+down_revision = "0002a"
 branch_labels = None
 depends_on = None
 

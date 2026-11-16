@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Регистрация · GBFS{% endblock %}
+{% block content %}
+<div class="login">
+    <div>
+        <p class="eyebrow">ОБЩЕСТВЕННЫЙ ТРАНСПОРТ</p>
+        <h1>Создайте аккаунт</h1>
+        <p class="intro">Начните работать со станциями вашей системы.</p>
+        <p>После регистрации вы получите роль оператора и доступ к зоне «Вся система».
+           Администратор сможет изменить вашу роль и зону.</p>
+        <p>Уже есть аккаунт? <a href="/login">Войти</a></p>
+    </div>
+    <form class="panel" action="/register" method="post">
+        <h2>Регистрация</h2>
+        {% if error %}
+            <div class="notice warning" role="alert">{{ error }}</div>
+            <p class="muted">request_id: {{ request.state.request_id }}</p>
+        {% endif %}
+        {% if not systems %}
+            <div class="notice warning" role="status">Пока нет доступных систем.
+                Регистрация станет доступна после загрузки справочников.</div>
+        {% endif %}
+        <label for="register-username">Логин</label>
+        <input id="register-username" name="username" autocomplete="username"
+               value="{{ values.username or '' }}" required maxlength="100"
+               pattern="[a-zA-Z0-9_.@\-]+" autofocus>
+        <p class="muted">Латинские буквы, цифры и символы _, ., @, -.</p>
+        <label for="register-password">Пароль</label>
+        <input id="register-password" name="password" type="password" autocomplete="new-password"
+               required minlength="12" maxlength="1024">
+        <p class="muted">Не менее 12 символов.</p>
+        <label for="register-confirm">Повторите пароль</label>
+        <input id="register-confirm" name="password_confirm" type="password"
+               autocomplete="new-password" required minlength="12" maxlength="1024">
+        <label for="register-system">Система</label>
+        <select id="register-system" name="system_id" required {% if not systems %}disabled{% endif %}>
+            <option value="">Выберите систему</option>
+            {% for system in systems %}
+                <option value="{{ system.id }}" {% if values.system_id == system.id %}selected{% endif %}>
+                    {{ system.name }} · {{ system.id }}
+                </option>
+            {% endfor %}
+        </select>
+        <button type="submit" {% if not systems %}disabled{% endif %}>Зарегистрироваться →</button>
+    </form>
+</div>
+{% endblock %}
