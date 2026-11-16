@@ -21,8 +21,8 @@ from app.core.config.settings import get_settings
 from app.core.database import get_database
 from app.models import Station, StationEvent
 from app.repositories.dashboard import serialize
-from app.schemas.auth import Login
-from app.services import auth
+from app.schemas.auth import Login, Register
+from app.services import auth, registration
 from app.services.reporting import parse_period
 
 router = APIRouter(include_in_schema=False)
@@ -36,6 +36,8 @@ templates.env.filters["clock"] = lambda value, zone="UTC": (
 )
 
 ERRORS = {
+    "username_taken": "Этот логин уже занят. Выберите другой.",
+    "registration_rate_limited": "Слишком много попыток регистрации или входа. Подождите минуту.",
     "invalid_credentials": "Неверный логин или пароль, либо сеанс истёк.",
     "scope_required": (
         "Зона не назначена или система не выбрана. Укажите свою систему; "
@@ -57,7 +59,7 @@ ERRORS = {
 
 
 def is_browser(request):
-    return request.url.path.startswith("/ui/") or request.url.path in ("/", "/login")
+    return request.url.path.startswith("/ui/") or request.url.path in ("/", "/login", "/register")
 
 
 def error_page(request, status, code, headers=None):
@@ -472,4 +474,72 @@ async def report_csv(
         "\ufeff" + buffer.getvalue(),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="gbfs-report.csv"'},
+    )
+
+
+@router.get("/register")
+def register_page(request: Request):
+    with get_database().transaction() as session:
+        systems = registration.systems(session)
+    return templates.TemplateResponse(request, "register.html", {"systems": systems, "values": {}})
+
+
+@router.post("/register")
+async def register_submit(request: Request):
+    from starlette.concurrency import run_in_threadpool
+
+    form = await request.form()
+    # Сохраняются только несекретные поля для повторного заполнения формы.
+    values = {
+        "username": str(form.get("username", ""))[:100],
+        "system_id": str(form.get("system_id", ""))[:200],
+    }
+    error, status = None, 422
+    body = None
+    try:
+        body = Register.model_validate(
+            {
+                "username": form.get("username"),
+                "system_id": form.get("system_id"),
+                "password": form.get("password"),
+            }
+        )
+    except ValidationError:
+        error = (
+            "Логин: 1–100 символов (латинские буквы, цифры, _, ., @, -). "
+            "Пароль: от 12 до 1024 символов. Выберите систему."
+        )
+    if body is not None and body.password.get_secret_value() != form.get("password_confirm"):
+        error = "Пароли не совпадают. Введите их ещё раз."
+
+    def create_account():
+        with get_database().transaction() as session:
+            return registration.register(session, body, get_settings())
+
+    if error is None:
+        try:
+            pair = await run_in_threadpool(create_account)
+        except HTTPException as exc:
+            if exc.detail not in ("username_taken", "system_not_found"):
+                raise
+            error, status = ERRORS[exc.detail], exc.status_code
+        else:
+            response = RedirectResponse("/ui/operator", 303)
+            cookies(response, pair, request)
+            return response
+
+    def choices():
+        with get_database().transaction() as session:
+            return registration.systems(session)
+
+    systems = await run_in_threadpool(choices)
+    return templates.TemplateResponse(
+        request,
+        "register.html",
+        {
+            "systems": systems,
+            "values": values,
+            "error": error,
+        },
+        status_code=status,
     )

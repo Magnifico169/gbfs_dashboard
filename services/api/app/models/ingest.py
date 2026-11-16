@@ -49,6 +49,8 @@ class IngestRun(Entity):
     finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(Text)
     http_status: Mapped[int | None] = mapped_column(Integer)
+    # Сохраняет сообщения ошибок из ранних установок M1.
+    error: Mapped[str | None] = mapped_column(Text)
     rows_in: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     rows_written: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     rows_quarantined: Mapped[int] = mapped_column(Integer, server_default=text("0"))

@@ -21,6 +21,12 @@ class Login(Input):
     system_id: str | None = Field(None, min_length=1, max_length=200)
 
 
+class Register(Input):
+    username: Username
+    password: SecretStr = Field(min_length=12, max_length=1024)
+    system_id: str = Field(min_length=1, max_length=200)
+
+
 class Refresh(Input):
     refresh_token: SecretStr = Field(min_length=1, max_length=200)
 
