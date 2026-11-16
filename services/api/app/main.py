@@ -47,16 +47,6 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
-        if request.url.path == "/api/v1/auth/register":
-            return JSONResponse(
-                {
-                    "detail": [
-                        {key: error[key] for key in ("loc", "msg", "type")}
-                        for error in exc.errors()
-                    ]
-                },
-                status_code=422,
-            )
         if web.is_browser(request):
             return web.error_page(request, 422, "Проверьте параметры запроса и формат дат")
         from fastapi.exception_handlers import request_validation_exception_handler

@@ -27,7 +27,7 @@ class AdmissionMiddleware:
         if scope["type"] != "http" or scope["path"].endswith("/stream"):
             return await self.app(scope, receive, send)
         if self.active >= self.limit:
-            if scope["path"].startswith("/ui/") or scope["path"] in ("/", "/login", "/register"):
+            if scope["path"].startswith("/ui/") or scope["path"] in ("/", "/login"):
                 from starlette.requests import Request
 
                 from app.web.routes import error_page
