@@ -20,6 +20,7 @@ bucket_boundaries <- function(start, end, resolution, zone) {
 }
 
 calculate_rollups <- function(facts, events, start, end, zone, stale_after_s = 300) {
+  if (!"ebikes_available" %in% names(facts)) facts$ebikes_available <- NA_real_
   output <- list()
   position <- 0L
   station_ids <- union(as.character(facts$station_id), as.character(events$station_id))
@@ -41,6 +42,7 @@ calculate_rollups <- function(facts, events, start, end, zone, stale_after_s = 3
         seconds <- pmax(0, pmin(finishes, right) - pmax(begins, left, as.numeric(start)))
         seconds[is.na(seconds)] <- 0
         valid <- seconds > 0
+        electric_valid <- valid & !is.na(rows$ebikes_available)
         dock_valid <- valid & !is.na(rows$docks_available)
         selected_events <- movement[as.numeric(movement$occurred_at) >= left &
                                       as.numeric(movement$occurred_at) <
@@ -56,6 +58,10 @@ calculate_rollups <- function(facts, events, start, end, zone, stale_after_s = 3
           bucket_start = utc_time(left), bucket_end = utc_time(right),
           observed_seconds = sum(seconds),
           bikes_seconds = sum(rows$bikes_available * seconds, na.rm = TRUE),
+          ebikes_seconds = sum(rows$ebikes_available * seconds, na.rm = TRUE),
+          ebikes_observed_seconds = sum(seconds[electric_valid]),
+          bikes_with_ebikes_seconds = sum(rows$bikes_available[electric_valid] *
+                                            seconds[electric_valid]),
           docks_seconds = sum(rows$docks_available * seconds, na.rm = TRUE),
           docks_observed_seconds = sum(seconds[dock_valid]),
           empty_seconds = sum(seconds[valid & rows$bikes_available == 0 &

@@ -200,3 +200,22 @@ async def stream(request: Request, system_id: str, access: LiveAccess, user: Cur
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/systems/{system_id}/report")
+async def report(
+    request: Request,
+    system_id: str,
+    access: DataAccess,
+    start: datetime,
+    end: datetime,
+    station_id: str | None = None,
+):
+    interval(start, end, 3660)
+    reads = request.app.state.reads
+    return await reads.read(
+        (system_id, "report", station_id, start, end, access),
+        lambda: reads.query(
+            "report", system_id, start, end, station_id, access=access, report=True
+        ),
+    )

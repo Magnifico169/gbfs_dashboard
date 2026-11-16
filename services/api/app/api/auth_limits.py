@@ -13,7 +13,11 @@ class AuthLimitsMiddleware:
         self.active = 0
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] != "http" or scope["path"] != "/api/v1/auth/login":
+        if (
+            scope["type"] != "http"
+            or scope["path"] not in ("/api/v1/auth/login", "/login")
+            or scope["method"] != "POST"
+        ):
             return await self.app(scope, receive, send)
         now = time.monotonic()
         while self.attempts and next(iter(self.attempts.values()))[0] <= now:
@@ -25,6 +29,15 @@ class AuthLimitsMiddleware:
             or self.active >= 4
             or (ip not in self.attempts and len(self.attempts) >= 4096)
         ):
+            if scope["path"] == "/login":
+                from starlette.requests import Request
+
+                from app.web.routes import error_page
+
+                response = error_page(
+                    Request(scope), 429, "login_rate_limited", {"Retry-After": "60"}
+                )
+                return await response(scope, receive, send)
             response = JSONResponse(
                 {"detail": "login_rate_limited"}, 429, headers={"Retry-After": "60"}
             )

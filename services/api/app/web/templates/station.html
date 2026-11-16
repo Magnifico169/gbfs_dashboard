@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% block title %}{{ station.name }} · GBFS{% endblock %}{% block content %}<div id="station-content"
+                                                                                                         hx-get="{{ request.url }}"
+                                                                                                         hx-trigger="every 30s"
+                                                                                                         hx-select="#station-content"
+                                                                                                         hx-target="this"
+                                                                                                         hx-swap="outerHTML">
+<a href="/ui/operator?{{ {'system_id':system.id}|query }}">← Обзор зоны</a>
+<div class="heading">
+    <div>
+        <p class="eyebrow">КАРТОЧКА СТАНЦИИ · {{ station.station_id }}</p>
+        <h1>{{ station.name }}</h1>
+        <p>{{ station.address or 'Адрес в источнике не указан' }}</p>
+    </div>
+    <span class="badge {{ 'warning' if station.issue else 'good' }}">{{ station.issue or 'Доступна' }}</span>
+</div>
+{% if station.quality != "fresh" %}<div class="notice warning">{{ station.issue }}. Ниже — последнее известное состояние; не используйте его как подтверждение наличия транспорта.</div>{% endif %}
+<div class="metrics">{% for label,key in [('Доступно всего','bikes_available'),('Электрических','ebikes_available'),('Свободных мест','docks_available'),('Неисправный транспорт','bikes_disabled')] %}<article><span>{{ label }}</span><strong>{{ station.state[key] if key in station.state else '—' }}</strong></article>{% endfor %}</div>
+<p class="timestamp">Источник: {{ station.state.reported_at|clock(system.timezone) }} · Проверка: {{ station.state.checked_at|clock(system.timezone) }} · Возраст: {{ (station.age_seconds/60)|round(1) if station.age_seconds is not none else '—' }} мин</p>
+<div class="workspace"><section class="panel"><h2>Справка</h2><dl><dt>Обычных велосипедов</dt><dd>{{ station.state.bikes_available - station.state.ebikes_available if station.state.ebikes_available is defined and station.state.bikes_available is defined else 'Нет данных' }}</dd><dt>Вместимость</dt><dd>{{ station.capacity or 'Нет данных' }}</dd><dt>Неисправных мест</dt><dd>{{ station.state.docks_disabled if station.state.docks_disabled is defined else 'Нет данных' }}</dd><dt>Установлена / аренда / возврат</dt><dd>{% for key in ['is_installed','is_renting','is_returning'] %}{{ 'Да' if station.state[key] else 'Нет' if key in station.state else 'Неизвестно' }}{{ ' / ' if not loop.last }}{% endfor %}</dd><dt>Объявленные работы</dt><dd>Источник не предоставляет объявления о работах.</dd></dl><button data-reload type="button" class="quiet">Обновить состояние</button></section><section class="panel"><h2>Ближайшие с транспортом</h2><p class="muted">Расстояние по прямой, только свежие данные вашей зоны.</p>{% for row in nearby %}<p><a href="/ui/operator/station?{{ {'system_id':system.id,'station_id':row.station_id}|query }}">{{ row.name }}</a> · {{ row.distance|round(2) }} км · {{ row.state.bikes_available }} шт.</p>{% else %}<p>Подходящих станций нет.</p>{% endfor %}</section></div>
+<section class="panel">
+    <h2>Доступность за последние сутки</h2>
+    <div class="chart"
+         data-chart="station-chart"
+         data-kind="station"
+         data-timezone="{{ system.timezone }}"></div>
+    <script type="application/json" id="station-chart">{{ rollups|tojson }}</script>
+    <p class="muted">Средние по 10 минутам. Пробелы означают отсутствие подтверждённых наблюдений; границы — целые корзины.</p>
+</section>
+<section class="panel"><h2>События станции</h2>{% include "events.html" %}{% if events.next_before %}<a href="/ui/operator/station?{{ {'system_id':system.id,'station_id':station.station_id,'before':events.next_before}|query }}">Более ранние события →</a>{% endif %}</section></div>{% endblock %}

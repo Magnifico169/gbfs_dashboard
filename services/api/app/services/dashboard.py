@@ -8,6 +8,7 @@ from collections.abc import Callable
 from app.core.config.settings import Settings
 from app.core.database import Database
 from app.repositories.dashboard import DashboardRepository
+from app.repositories.reports import ReportRepository
 from app.services.access import Access
 
 
@@ -37,9 +38,10 @@ class ReadService:
             return cached[1]
         task = self.pending.get(key)
         if task is None:
-            is_report = key[1] in ("history", "rollups")
+            is_report = key[1] in ("history", "rollups", "report")
             active = sum(
-                (pending[1] in ("history", "rollups")) == is_report for pending in self.pending
+                (pending[1] in ("history", "rollups", "report")) == is_report
+                for pending in self.pending
             )
             capacity = 2 if is_report else self.settings.read_concurrency
             if active >= capacity:
@@ -64,7 +66,10 @@ class ReadService:
         database = self.reports if report else self.database
         with database.session() as session:
             access.apply(session)
-            return getattr(DashboardRepository(session), method)(*args)
+            repository = (
+                ReportRepository(session) if method == "report" else DashboardRepository(session)
+            )
+            return getattr(repository, method)(*args)
 
     async def snapshot(self, system_id: str, access: Access):
         return await self.read(

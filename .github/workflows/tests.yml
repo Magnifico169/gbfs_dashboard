@@ -29,6 +29,10 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --frozen --all-packages
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test services/api/tests/test_chart_math.cjs
       - run: uv run pytest
         working-directory: services/api
       - run: uv run alembic upgrade head
@@ -41,6 +45,8 @@ jobs:
         with:
           packages: any::DBI, any::RPostgres, any::jsonlite
       - run: Rscript tests/test_rollups.R
+        working-directory: services/analytics
+      - run: Rscript tests/test_insights.R
         working-directory: services/analytics
       - run: Rscript tests/test_database.R
         working-directory: services/analytics
