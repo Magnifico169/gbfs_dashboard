@@ -1,0 +1,19 @@
+<div class="metrics">
+    <article><span>Станций в зоне</span><strong>{{ count }}</strong></article><article><span>Доступно к аренде · свежие данные</span><strong>{{ available }}</strong></article><article><span>Требуют внимания</span><strong>{{ problem_count }}</strong></article><article><span>Без достоверного состояния</span><strong>{{ stale_count }}</strong></article>
+</div>
+<p class="timestamp">Проверено {{ snapshot.as_of|clock(system.timezone) }}. Возраст исходных данных указан у каждой станции.</p>
+{% if stale_count %}<div class="notice warning">У {{ stale_count }} станций данные устарели, отсутствуют или недостоверны. Последние известные значения не подтверждают доступность сейчас.</div>{% elif count and not problem_count %}<div class="notice">Вмешательство не требуется — все станции передают достоверные данные.</div>{% endif %}
+<div class="workspace"><section class="panel"><div class="section-title"><h2>Станции</h2><span>{{ matched }} найдено</span></div><div class="table-wrap"><table><thead><tr><th>Станция</th><th>Транспорт / места</th><th>Состояние</th><th>Возраст</th></tr></thead><tbody>{% for row in rows %}<tr><td><a href="/ui/operator/station?{{ {'system_id':system.id,'station_id':row.station_id}|query }}">{{ row.name }}</a><small>{{ row.address or row.station_id }}</small></td><td>{{ row.state.bikes_available if row.state.bikes_available is defined else '—' }} / {{ row.state.docks_available if row.state.docks_available is defined else '—' }}{% if row.quality != "fresh" %}<small>Последнее известное</small>{% endif %}</td><td><span class="badge {{ 'warning' if row.issue else 'good' }}">{{ row.issue or 'Доступна' }}</span></td><td>{{ (row.age_seconds / 60)|round(1) if row.age_seconds is not none else '—' }} мин<small>{{ row.state.reported_at|clock(system.timezone) }}</small></td></tr>{% else %}<tr><td colspan="4">{{ 'В вашей зоне пока нет станций.' if not count else 'По запросу станции не найдены.' }}</td></tr>{% endfor %}</tbody></table></div>
+    <div class="pagination">{% if page > 1 %}<a href="/ui/operator?{{ {'system_id':system.id,'q':q,'problems':problems|string|lower,'page':page-1}|query }}">← Назад</a>{% endif %}<span>Страница {{ page }}</span>{% if page*100 < matched %}<a href="/ui/operator?{{ {'system_id':system.id,'q':q,'problems':problems|string|lower,'page':page+1}|query }}">Далее →</a>{% endif %}</div></section>
+<section class="panel map-panel">
+    <h2>Карта зоны</h2>
+    <div class="station-map"
+         data-map="map-data"
+         data-system="{{ system.id }}" data-view-key="{{ system.id }}|{{ q }}|{{ problems }}"
+         role="region"
+         aria-label="Карта доступных станций"></div>
+    <script type="application/json" id="map-data">{{ map_data|tojson }}</script>
+    <p class="muted">Выберите точку для открытия карточки. При недоступности подложки используйте список станций.</p>
+</section>
+</div>
+<section class="panel"><h2>Последние события зоны</h2>{% include "events.html" %}</section>

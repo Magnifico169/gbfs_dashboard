@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% block title %}Обзор зоны · GBFS{% endblock %}{% block content %}
+<div class="heading">
+    <div>
+        <p class="eyebrow">ОПЕРАТОР / ОБЗОР ЗОНЫ</p>
+        <h1>{{ system.name }}</h1>
+        <p class="muted">Справка для консультации пользователей · только доступные вам станции</p>
+    </div>
+    <span class="live-dot">Обновление в реальном времени</span>
+</div>
+<form id="station-filter"
+      class="filters"
+      action="/ui/operator"
+      hx-get="/ui/operator"
+      hx-target="#operator-board"
+      hx-trigger="submit, input changed delay:400ms from:input[name=q], change from:select, change from:input[type=checkbox]"
+      hx-sync="this:replace"
+      hx-push-url="true">
+    <label>Система<select name="system_id">{% for item in systems %}<option value="{{ item.id }}"
+                                                                            {% if item.id == system.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></label><label class="grow">Найти станцию<input name="q"
+                                                                                                                                                                                                                          value="{{ q }}"
+                                                                                                                                                                                                                          placeholder="Название, адрес или ID"
+                                                                                                                                                                                                                          type="search"></label><label class="check"><input type="checkbox"
+                                                                                                                                                                                                                                                                            name="problems"
+                                                                                                                                                                                                                                                                            value="true"
+                                                                                                                                                                                                                                                                            {% if problems %}checked{% endif %}>Требуют внимания</label><button type="submit">Найти</button></form>
+<div id="operator-board"
+     hx-get="/ui/operator"
+     hx-include="#station-filter"
+
+     hx-trigger="refresh-board from:body"
+     hx-sync="#station-filter:replace"
+     data-stream-system="{{ system.id }}">{% include "operator_board.html" %}</div>
+{% endblock %}

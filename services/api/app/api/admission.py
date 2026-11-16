@@ -27,6 +27,13 @@ class AdmissionMiddleware:
         if scope["type"] != "http" or scope["path"].endswith("/stream"):
             return await self.app(scope, receive, send)
         if self.active >= self.limit:
+            if scope["path"].startswith("/ui/") or scope["path"] in ("/", "/login"):
+                from starlette.requests import Request
+
+                from app.web.routes import error_page
+
+                response = error_page(Request(scope), 503, "overloaded", {"Retry-After": "3"})
+                return await response(scope, receive, send)
             response = JSONResponse(
                 {"detail": "overloaded"}, status_code=503, headers={"Retry-After": "3"}
             )

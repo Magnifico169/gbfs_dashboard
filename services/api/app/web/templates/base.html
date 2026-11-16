@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ru">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="htmx-config"
+              content='{"historyCacheSize":0,"historyRestoreAsHxRequest":false,"allowEval":false}'>
+        <title>{% block title %}GBFS · Панель управления{% endblock %}</title>
+        <link rel="stylesheet" href="/static/vendor/leaflet.css">
+        <link rel="stylesheet" href="/static/vendor/uPlot.min.css">
+        <link rel="stylesheet" href="/static/app.css">
+        <script defer src="/static/vendor/htmx.min.js"></script>
+        <script defer src="/static/vendor/leaflet.js"></script>
+        <script defer src="/static/vendor/uPlot.iife.min.js"></script>
+        <script defer src="/static/chart-math.js"></script>
+        <script defer src="/static/app.js"></script>
+    </head>
+    <body hx-history="false">
+        <a class="skip" href="#main">К содержимому</a>
+        <header class="topbar">
+            <a class="brand" href="/">GB<span>FS</span> <small>МОБИЛЬНОСТЬ ГОРОДА</small></a>
+        {% if user %}<nav aria-label="Разделы">{% if user.role != "manager" %}<a href="/ui/operator">Оператор</a>{% endif %}{% if user.role != "operator" %}<a href="/ui/manager">Аналитика</a>{% endif %}</nav><form action="/ui/logout" method="post"><span class="role">{{ {'operator':'Оператор','manager':'Менеджер','admin':'Администратор'}[user.role] }}</span> <button class="quiet" type="submit">Выйти</button></form>{% endif %}</header>
+        <div id="connection" role="status" hidden></div>
+        <div id="request-error" role="alert" hidden></div>
+        <main id="main">
+            {% block content %}{% endblock %}
+        </main>
+        <footer>
+            GBFS Dashboard <span>Данные источника · {{ system.timezone if system else 'Время указано в часовом поясе системы' }}</span>
+        </footer>
+    </body>
+</html>

@@ -9,11 +9,13 @@ test_database <- function() {
   connection <- connect_database()
   system_id <- paste0("r_test_", Sys.getpid())
   on.exit({
-    for (table in c("mart.station_rollup", "mart.rollup_cursor", "core.station_event",
+    for (table in c("mart.station_insight", "mart.load_forecast", "mart.station_rollup",
+                    "mart.rollup_cursor", "core.station", "core.station_event",
                     "core.station_status")) {
       DBI::dbExecute(admin, paste("delete from", table, "where system_id = $1"),
                      params = list(system_id))
     }
+    DBI::dbExecute(admin, "delete from core.system where id = $1", params = list(system_id))
     DBI::dbDisconnect(connection)
     DBI::dbDisconnect(admin)
   })
@@ -21,7 +23,8 @@ test_database <- function() {
   facts <- data.frame(
     system_id = system_id, station_id = "s1", fetched_at = t0 + c(0, 300),
     reported_at = t0 + c(0, 300), observed_until = t0 + c(300, 600),
-    bikes_available = c(10L, 0L), docks_available = c(0L, 10L),
+    bikes_available = c(10L, 0L), ebikes_available = c(2L, 0L),
+    docks_available = c(0L, 10L),
     is_installed = TRUE, is_renting = TRUE, is_returning = TRUE
   )
   DBI::dbAppendTable(admin, DBI::Id(schema = "core", table = "station_status"), facts)
@@ -39,6 +42,31 @@ test_database <- function() {
     "where system_id = $1 order by resolution"
   ), params = list(system_id))
   stopifnot(identical(values, repeated))
+  DBI::dbExecute(admin, paste(
+    "insert into core.system (id, name, timezone, gbfs_version)",
+    "values ($1, 'R test', 'UTC', '3.0')"
+  ), params = list(system_id))
+  DBI::dbExecute(admin, paste(
+    "insert into core.station (system_id, station_id, name, lat, lon, capacity, valid_from)",
+    "values ($1, 's1', 'R test', 0, 0, 10, $2)"
+  ), params = list(system_id, t0))
+  anchor <- t0 + 3600
+  run_insights(connection, system_id, "UTC", anchor, 300)
+  run_insights(connection, system_id, "UTC", anchor, 300)
+  insights <- DBI::dbGetQuery(admin, paste(
+    "select quality, jsonb_array_length(profile) as profiles from mart.station_insight",
+    "where system_id = $1"
+  ), params = list(system_id))
+  stopifnot(nrow(insights) == 1L, insights$quality == "unknown", insights$profiles == 1L)
+  forecasts <- DBI::dbGetQuery(admin, paste(
+    "select jsonb_array_length(points) as points from mart.load_forecast where system_id = $1"
+  ), params = list(system_id))
+  stopifnot(nrow(forecasts) == 1L, forecasts$points == 0L)
+  electric <- DBI::dbGetQuery(admin, paste(
+    "select ebikes_seconds, ebikes_observed_seconds from mart.station_rollup",
+    "where system_id = $1"
+  ), params = list(system_id))
+  stopifnot(all(electric$ebikes_seconds == 600), all(electric$ebikes_observed_seconds == 600))
   cat("R database integration passed\n")
 }
 test_database()

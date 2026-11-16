@@ -1,4 +1,5 @@
 source("rollups.R")
+source("insights.R")
 
 connect_database <- function() {
   connection <- DBI::dbConnect(
@@ -43,10 +44,11 @@ process_chunk <- function(connection, system_id, zone, until, stale_after_s) {
     if (end <= start) return(until)
     facts <- DBI::dbGetQuery(connection, paste(
       "select station_id, fetched_at, observed_until, bikes_available, docks_available,",
+      "ebikes_available,",
       "is_installed, is_renting, is_returning from core.station_status",
       "where system_id = $1 and fetched_at >= $2 and fetched_at < $3",
       "union all (select distinct on (station_id) station_id, fetched_at, observed_until,",
-      "bikes_available, docks_available, is_installed, is_renting, is_returning",
+      "bikes_available, docks_available, ebikes_available, is_installed, is_renting, is_returning",
       "from core.station_status where system_id = $1 and fetched_at < $2",
       "order by station_id, fetched_at desc)"
     ), params = list(system_id, start, end))
@@ -100,6 +102,7 @@ run_rollups <- function(connection, until = Sys.time(), stale_after_s = 300) {
                                    until, stale_after_s)
         if (processed >= until) break
       }
+      run_insights(connection, systems$id[i], systems$timezone[i], until, stale_after_s)
     }, error = function(error) {
       message("Rollup failed for ", systems$id[i], ": ", conditionMessage(error))
     })

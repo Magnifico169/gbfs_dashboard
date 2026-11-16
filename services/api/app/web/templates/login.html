@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% block title %}Вход · GBFS{% endblock %}{% block content %}
+<div class="login">
+    <div>
+        <p class="eyebrow">ОБЩЕСТВЕННЫЙ ТРАНСПОРТ</p>
+        <h1>
+            Город в движении.
+            <br>
+            Данные под рукой.
+        </h1>
+        <p class="intro">
+            Доступность станций для оператора.
+            <br>
+            Загрузка парка и отчёты для менеджера.
+        </p>
+    </div>
+    <form class="panel" action="/login" method="post"><h2>Войти в систему</h2><label>Логин<input name="username"
+                                                                                                 autocomplete="username"
+                                                                                                 required
+                                                                                                 maxlength="100"
+                                                                                                 autofocus></label><label>Пароль<input type="password"
+                                                                                                                                       name="password"
+                                                                                                                                       autocomplete="current-password"
+                                                                                                                                       required
+                                                                                                                                       maxlength="1024"></label><label>Идентификатор системы<input name="system_id"
+                                                                                                                                                                                                   value="lyft_nyc"
+                                                                                                                                                                                                   maxlength="200"
+                                                                                                                                                                                                   placeholder="Например, lyft_nyc"></label><p class="muted">Укажите систему, в которой вам назначена зона. Администратор может оставить поле пустым.</p><button type="submit">Войти →</button></form></div>{% endblock %}
