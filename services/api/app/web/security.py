@@ -17,7 +17,7 @@ class BrowserSecurityMiddleware:
         scope.setdefault("state", {})["request_id"] = request_id
         headers = dict(scope.get("headers", []))
         path = scope["path"]
-        browser = path.startswith("/ui/") or path in ("/", "/login")
+        browser = path.startswith("/ui/") or path in ("/", "/login", "/register")
         if browser and scope["method"] not in ("GET", "HEAD", "OPTIONS"):
             origin = headers.get(b"origin", b"").decode()
             host = headers.get(b"host", b"").decode()
@@ -40,7 +40,8 @@ class BrowserSecurityMiddleware:
                     extra += [
                         (b"cache-control", b"no-store"),
                         (b"x-frame-options", b"DENY"),
-                        (b"referrer-policy", b"same-origin"),
+                        # OSM tiles require Referer; disclose only the origin cross-site.
+                        (b"referrer-policy", b"strict-origin-when-cross-origin"),
                     ]
                 message = {**message, "headers": [*message.get("headers", []), *extra]}
             await send(message)
